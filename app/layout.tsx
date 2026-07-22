@@ -20,8 +20,8 @@ export const metadata: Metadata = {
     "codex-preview": "development",
   },
   icons: {
-    icon: "/favicon.svg",
-    shortcut: "/favicon.svg",
+    icon: "/motion-studio-logo.png",
+    shortcut: "/motion-studio-logo.png",
   },
 };
 

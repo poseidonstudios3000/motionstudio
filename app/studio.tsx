@@ -124,7 +124,7 @@ export default function Studio() {
   const [selectedSceneId, setSelectedSceneId] = useState(demoScenes[0].id);
   const [captionPreset, setCaptionPreset] = useState<CaptionPreset>("punch");
   const [motionStyle, setMotionStyle] = useState<MotionStyle>("kinetic");
-  const [accent, setAccent] = useState("#caff3d");
+  const [accent, setAccent] = useState("#1035F4");
   const [activePanel, setActivePanel] = useState<Panel>("scenes");
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [showImport, setShowImport] = useState(false);
@@ -466,7 +466,7 @@ export default function Studio() {
   return (
     <main className="studio-shell">
       <header className="topbar">
-        <div className="brand-lockup" aria-label="MOTN Studio"><span className="brand-mark">M</span><span className="brand-name">MOTN</span><span className="brand-product">Studio</span></div>
+        <div className="brand-lockup" aria-label="MOTN Studio"><span className="brand-mark"><img src="/motion-studio-logo.png" alt="" /></span><span className="brand-name">MOTN</span><span className="brand-product">Studio</span></div>
         <div className="project-heading"><span className="project-status-dot" /><div><strong>{fileName}</strong><span>Local draft · private on this device</span></div><ChevronDown size={15} /></div>
         <div className="topbar-actions">
           <button className="icon-button desktop-only" type="button" aria-label="Project settings" onClick={() => setActivePanel("brand")}><Settings2 size={18} /></button>
@@ -535,7 +535,7 @@ export default function Studio() {
           <div className="panel-content" id="panel-brand">
             <div className="section-heading"><div><span>Visual system</span><strong>One coherent motion language</strong></div><Sparkles size={17} /></div>
             <div className="control-section no-border"><div className="control-label"><span>Motion direction</span><small>Curated templates</small></div><div className="style-stack">{([ ["kinetic", "Kinetic dark", "Hard cuts · glow · energy"], ["clean", "Clean tech", "Crisp cards · controlled pace"], ["editorial", "Neo editorial", "Warm black · bold type"] ] as Array<[MotionStyle, string, string]>).map(([value, label, detail]) => <button type="button" key={value} className={motionStyle === value ? "active" : ""} onClick={() => setMotionStyle(value)} aria-pressed={motionStyle === value}><span className={`style-swatch ${value}`} /><span><strong>{label}</strong><small>{detail}</small></span>{motionStyle === value ? <Check size={15} /> : null}</button>)}</div></div>
-            <div className="control-section"><div className="control-label"><span>Accent</span><small>{accent}</small></div><div className="color-row">{["#caff3d", "#8b7dff", "#43d7ff", "#ff5c4d", "#f4f1e8"].map((color) => <button type="button" aria-label={`Set accent ${color}`} aria-pressed={accent === color} key={color} onClick={() => setAccent(color)} className={accent === color ? "active" : ""} style={{ background: color }}>{accent === color ? <Check size={14} color="#08090a" /> : null}</button>)}</div></div>
+            <div className="control-section"><div className="control-label"><span>Accent</span><small>{accent}</small></div><div className="color-row">{["#1035F4", "#caff3d", "#8b7dff", "#43d7ff", "#ff5c4d", "#f4f1e8"].map((color) => <button type="button" aria-label={`Set accent ${color}`} aria-pressed={accent === color} key={color} onClick={() => setAccent(color)} className={accent === color ? "active" : ""} style={{ background: color }}>{accent === color ? <Check size={14} color={color === "#1035F4" ? "#ffffff" : "#08090a"} /> : null}</button>)}</div></div>
             <div className="control-section"><div className="control-label"><span>Export size</span><small>MP4 · H.264</small></div><div className="resolution-row"><button type="button" className={resolution === 720 ? "active" : ""} onClick={() => setResolution(720)} aria-pressed={resolution === 720}><strong>720p</strong><small>Fast preview</small></button><button type="button" className={resolution === 1080 ? "active" : ""} onClick={() => setResolution(1080)} aria-pressed={resolution === 1080}><strong>1080p</strong><small>High quality</small></button></div></div>
             <div className="toggle-row"><div><Volume2 size={17} /><span><strong>Source audio</strong><small>Keep talking head voice</small></span></div><button className={`switch ${soundEnabled ? "on" : ""}`} role="switch" aria-checked={soundEnabled} aria-label="Keep source audio" type="button" onClick={() => setSoundEnabled((value) => !value)}><span /></button></div>
             <div className="toggle-row"><div><Zap size={17} /><span><strong>Dopamine pacing</strong><small>{dopaminePacing ? "Visual beat every 2–3 sec" : "Longer, calmer visual holds"}</small></span></div><button className={`switch ${dopaminePacing ? "on" : ""}`} role="switch" aria-checked={dopaminePacing} aria-label="Use fast dopamine pacing" type="button" onClick={() => { const next = !dopaminePacing; setDopaminePacing(next); if (transcript.trim() && !storyboardDirty) redirectScenes(next); }}><span /></button></div>
