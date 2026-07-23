@@ -1,12 +1,13 @@
 /// <reference lib="webworker" />
 
 import { env, pipeline } from "@huggingface/transformers";
-import { DEFAULT_LOCAL_SPEECH_MODEL_ID, getTranscriptionOptions } from "./transcription";
+import { getTranscriptionOptions, type LocalTranscriptionModelId } from "./transcription";
 
 type TranscriptionRequest = {
   type: "transcribe";
   requestId: number;
   audio: Float32Array;
+  modelId: LocalTranscriptionModelId;
 };
 
 type PipelineResult = {
@@ -19,28 +20,31 @@ env.allowRemoteModels = true;
 if (env.backends.onnx.wasm) env.backends.onnx.wasm.numThreads = 1;
 
 type Transcriber = (audio: Float32Array, options: Record<string, unknown>) => Promise<PipelineResult>;
-let transcriberPromise: Promise<Transcriber> | null = null;
+const transcriberPromises = new Map<LocalTranscriptionModelId, Promise<Transcriber>>();
 
-const getTranscriber = () => {
+const getTranscriber = (modelId: LocalTranscriptionModelId) => {
+  let transcriberPromise = transcriberPromises.get(modelId);
   if (!transcriberPromise) {
-    transcriberPromise = pipeline("automatic-speech-recognition", DEFAULT_LOCAL_SPEECH_MODEL_ID, {
+    transcriberPromise = pipeline("automatic-speech-recognition", modelId, {
       device: "wasm",
       dtype: "q8",
       progress_callback: (event: { status?: string; progress?: number; file?: string }) => {
         self.postMessage({ type: "model-progress", status: event.status, progress: event.progress, file: event.file });
       },
     }).then((value) => value as unknown as Transcriber);
+    transcriberPromises.set(modelId, transcriberPromise);
   }
   return transcriberPromise;
 };
 
 self.addEventListener("message", async (event: MessageEvent<TranscriptionRequest>) => {
   if (event.data.type !== "transcribe") return;
-  const { requestId, audio } = event.data;
+  const { requestId, audio, modelId } = event.data;
   try {
-    self.postMessage({ type: "status", requestId, message: "Loading multilingual Whisper" });
-    const transcriber = await getTranscriber();
-    self.postMessage({ type: "status", requestId, message: "Transcribing speech locally" });
+    const modelLabel = modelId.endsWith("small") ? "Whisper Small" : "Whisper Tiny";
+    self.postMessage({ type: "status", requestId, message: `Loading ${modelLabel}` });
+    const transcriber = await getTranscriber(modelId);
+    self.postMessage({ type: "status", requestId, message: `Transcribing locally with ${modelLabel}` });
     const result = (await transcriber(audio, getTranscriptionOptions("auto"))) as PipelineResult;
     self.postMessage({ type: "result", requestId, text: result.text?.trim() ?? "", chunks: result.chunks ?? [] });
   } catch (error) {

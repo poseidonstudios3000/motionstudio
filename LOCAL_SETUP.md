@@ -130,6 +130,9 @@ TRANSCRIPTION_PROVIDER=local-whisper
 WHISPER_MODEL=large-v3-turbo
 WHISPER_DEVICE=auto
 
+# Current Motion Studio comparison UI — optional; local Tiny/Small work without it
+GROQ_API_KEY=
+
 # Storyboard intelligence
 STORYBOARD_PROVIDER=openai
 STORYBOARD_MODEL=

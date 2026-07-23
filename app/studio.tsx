@@ -54,6 +54,17 @@ import {
 } from "./motion-composition";
 import { extractSpeechAudio, inspectMedia, MAX_ANALYSIS_SECONDS, normalizeTimedWords } from "./media-analysis";
 import { planStoryboard, type DetectedLanguage } from "./storyboard";
+import { TranscriptionComparisonResults, TranscriptionModelPicker, type TranscriptionRun } from "./transcription-comparison";
+import {
+  DEFAULT_TRANSCRIPTION_MODEL_IDS,
+  encodePcm16Wav,
+  getTranscriptionModel,
+  isGroqTranscriptionModel,
+  isLocalTranscriptionModel,
+  type GroqTranscriptionModelId,
+  type LocalTranscriptionModelId,
+  type TranscriptionModelId,
+} from "./transcription";
 
 const FPS = 30;
 const demoTranscript =
@@ -110,6 +121,37 @@ const languageName: Record<DetectedLanguage, string> = { EN: "English", DE: "Ger
 type Panel = "scenes" | "captions" | "brand";
 type RenderStatus = "idle" | "checking" | "rendering" | "complete" | "error";
 
+type GroqTranscriptionPayload = {
+  text: string;
+  words: TimedWord[];
+};
+
+const transcribeWithGroq = async (audio: Float32Array, modelId: GroqTranscriptionModelId, signal: AbortSignal): Promise<GroqTranscriptionPayload> => {
+  const formData = new FormData();
+  formData.append("model", modelId);
+  formData.append("audio", encodePcm16Wav(audio), "motion-studio-audio.wav");
+  const response = await fetch("/api/transcription/groq", { method: "POST", body: formData, signal });
+  const payload: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const message = typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string"
+      ? payload.error
+      : "Groq transcription failed.";
+    throw new Error(message);
+  }
+  if (typeof payload !== "object" || payload === null || !("text" in payload) || typeof payload.text !== "string") {
+    throw new Error("Groq returned an unreadable transcript.");
+  }
+  const words = "words" in payload && Array.isArray(payload.words)
+    ? payload.words.flatMap((word) => {
+        if (typeof word !== "object" || word === null) return [];
+        const candidate = word as Record<string, unknown>;
+        if (typeof candidate.text !== "string" || typeof candidate.start !== "number" || typeof candidate.end !== "number") return [];
+        return [{ text: candidate.text, start: candidate.start, end: candidate.end }];
+      })
+    : [];
+  return { text: payload.text.trim(), words };
+};
+
 export default function Studio() {
   const fileInput = useRef<HTMLInputElement>(null);
   const playerRef = useRef<PlayerRef>(null);
@@ -117,6 +159,7 @@ export default function Studio() {
   const transcriptionWorker = useRef<Worker | null>(null);
   const analysisRequest = useRef(0);
   const analysisAbort = useRef<AbortController | null>(null);
+  const sourceAudio = useRef<Float32Array | null>(null);
   const renderAbort = useRef<AbortController | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [fileName, setFileName] = useState("AI models — demo.mov");
@@ -150,11 +193,17 @@ export default function Studio() {
   const [dopaminePacing, setDopaminePacing] = useState(true);
   const [sourceFit, setSourceFit] = useState<"cover" | "contain">("cover");
   const [dropActive, setDropActive] = useState(false);
+  const [selectedTranscriptionModels, setSelectedTranscriptionModels] = useState<TranscriptionModelId[]>([...DEFAULT_TRANSCRIPTION_MODEL_IDS]);
+  const [transcriptionRuns, setTranscriptionRuns] = useState<TranscriptionRun[]>([]);
+  const [appliedTranscriptionModel, setAppliedTranscriptionModel] = useState<TranscriptionModelId | null>(null);
+  const [hasSourceAudio, setHasSourceAudio] = useState(false);
 
   const durationInFrames = Math.max(1, Math.ceil(sourceMeta.duration * FPS));
   const selectedScene = scenes.find((scene) => scene.id === selectedSceneId) ?? scenes[0];
   const currentProgress = durationInFrames <= 1 ? 0 : Math.min(1, currentFrame / (durationInFrames - 1));
   const playingSceneId = scenes.find((scene) => currentProgress >= scene.start && currentProgress < scene.end)?.id ?? scenes.at(-1)?.id;
+  const usesGroqTranscription = selectedTranscriptionModels.some(isGroqTranscriptionModel);
+  const appliedModel = appliedTranscriptionModel ? getTranscriptionModel(appliedTranscriptionModel) : null;
   const compositionProps = useMemo<MotionCompositionProps>(() => ({ videoUrl, transcript, words, scenes, captionPreset, motionStyle, accent, projectName: "MOTN / 001", durationInFrames, soundEnabled, wordTiming, sourceFit }), [videoUrl, transcript, words, scenes, captionPreset, motionStyle, accent, durationInFrames, soundEnabled, wordTiming, sourceFit]);
 
   useEffect(() => () => {
@@ -200,7 +249,7 @@ export default function Studio() {
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [showImport, processing]);
 
-  const transcribeAudio = useCallback((audio: Float32Array, requestId: number, signal: AbortSignal) => new Promise<{ text: string; words: TimedWord[] }>((resolve, reject) => {
+  const transcribeAudio = useCallback((audio: Float32Array, requestId: number, signal: AbortSignal, modelId: LocalTranscriptionModelId) => new Promise<{ text: string; words: TimedWord[] }>((resolve, reject) => {
     const worker = transcriptionWorker.current ?? new Worker(new URL("./transcription-worker.ts", import.meta.url), { type: "module" });
     transcriptionWorker.current = worker;
     let settled = false;
@@ -261,8 +310,106 @@ export default function Studio() {
       onAbort();
       return;
     }
-    worker.postMessage({ type: "transcribe", requestId, audio }, [audio.buffer]);
+    worker.postMessage({ type: "transcribe", requestId, audio, modelId }, [audio.buffer]);
   }), []);
+
+  const toggleTranscriptionModel = (modelId: TranscriptionModelId) => {
+    setSelectedTranscriptionModels((current) => current.includes(modelId)
+      ? current.length === 1 ? current : current.filter((candidate) => candidate !== modelId)
+      : [...current, modelId]);
+  };
+
+  const applyTranscription = useCallback((run: TranscriptionRun, duration: number) => {
+    if (run.status !== "success" || !run.text.trim()) return;
+    const planned = planStoryboard({ transcript: run.text, words: run.words, duration, dopaminePacing });
+    setTranscript(run.text);
+    setWords(run.words);
+    setLanguage(planned.language);
+    setScenes(planned.scenes);
+    setSelectedSceneId(planned.scenes[0].id);
+    setAppliedTranscriptionModel(run.modelId);
+    setNeedsTranscript(false);
+    setStoryboardDirty(false);
+    setActivePanel("captions");
+  }, [dopaminePacing]);
+
+  const runTranscriptionComparison = useCallback(async (audio: Float32Array, requestId: number, signal: AbortSignal, duration: number) => {
+    const completed: TranscriptionRun[] = [];
+    const publish = (run: TranscriptionRun) => {
+      completed.push(run);
+      setTranscriptionRuns((current) => [...current.filter((candidate) => candidate.modelId !== run.modelId), run]);
+    };
+    const capture = async (modelId: TranscriptionModelId, operation: () => Promise<{ text: string; words: TimedWord[] }>) => {
+      const startedAt = performance.now();
+      try {
+        const result = await operation();
+        const run: TranscriptionRun = { modelId, status: "success", text: result.text, words: result.words, elapsedMs: performance.now() - startedAt };
+        publish(run);
+        return run;
+      } catch (error) {
+        if (signal.aborted) throw error;
+        const run: TranscriptionRun = { modelId, status: "error", text: "", words: [], elapsedMs: performance.now() - startedAt, error: error instanceof Error ? error.message : "Transcription failed." };
+        publish(run);
+        return run;
+      }
+    };
+
+    setTranscriptionRuns([]);
+    setAppliedTranscriptionModel(null);
+    const groqModels = selectedTranscriptionModels.filter(isGroqTranscriptionModel);
+    const localModels = selectedTranscriptionModels.filter(isLocalTranscriptionModel);
+    const groqTask = Promise.all(groqModels.map((modelId) => {
+      setAnalysisStage(`Sending normalized audio to ${getTranscriptionModel(modelId).shortLabel}`);
+      return capture(modelId, () => transcribeWithGroq(audio, modelId, signal));
+    }));
+    const localTask = (async () => {
+      const localRuns: TranscriptionRun[] = [];
+      for (const [index, modelId] of localModels.entries()) {
+        if (signal.aborted) throw new DOMException("Transcription cancelled", "AbortError");
+        setAnalysisStage(`Running ${getTranscriptionModel(modelId).label} on this device`);
+        const run = await capture(modelId, () => transcribeAudio(new Float32Array(audio), requestId * 10 + index + 1, signal, modelId));
+        localRuns.push(run);
+        if (index < localModels.length - 1) {
+          transcriptionWorker.current?.terminate();
+          transcriptionWorker.current = null;
+        }
+      }
+      return localRuns;
+    })();
+
+    await Promise.all([groqTask, localTask]);
+    const successful = completed.filter((run) => run.status === "success" && run.text.trim());
+    if (!successful.length) throw new Error("None of the selected models produced a transcript. Review each model error and try again.");
+    const priority: readonly TranscriptionModelId[] = ["whisper-large-v3", "whisper-large-v3-turbo", "Xenova/whisper-small", "Xenova/whisper-tiny"];
+    const preferred = [...successful].sort((left, right) => priority.indexOf(left.modelId) - priority.indexOf(right.modelId))[0];
+    applyTranscription(preferred, duration);
+    return preferred;
+  }, [applyTranscription, selectedTranscriptionModels, transcribeAudio]);
+
+  const rerunTranscriptionComparison = async () => {
+    if (!sourceAudio.current || processing) return;
+    analysisAbort.current?.abort();
+    const controller = new AbortController();
+    analysisAbort.current = controller;
+    const requestId = ++analysisRequest.current;
+    setProcessing(true);
+    setUploadError("");
+    setAnalysisStage(`Starting ${selectedTranscriptionModels.length}-model transcription comparison`);
+    setAnalysisProgress(42);
+    try {
+      await runTranscriptionComparison(new Float32Array(sourceAudio.current), requestId, controller.signal, sourceMeta.duration);
+      if (requestId !== analysisRequest.current) return;
+      setAnalysisProgress(100);
+      setAnalysisStage("Comparison ready");
+      setActivePanel("captions");
+    } catch (error) {
+      if (requestId !== analysisRequest.current || controller.signal.aborted) return;
+      setUploadError(error instanceof Error ? error.message : "The transcription comparison failed.");
+    } finally {
+      if (requestId === analysisRequest.current) setProcessing(false);
+      if (analysisAbort.current === controller) analysisAbort.current = null;
+    }
+  };
 
   const handleFile = async (file: File) => {
     if (renderStatus === "checking" || renderStatus === "rendering") return;
@@ -292,9 +439,12 @@ export default function Studio() {
       setSourceMeta({ duration: projectDuration, width: metadata.width, height: metadata.height, size: metadata.size });
       setTranscript("");
       setWords([]);
+      setHasSourceAudio(false);
+      setTranscriptionRuns([]);
+      setAppliedTranscriptionModel(null);
       setNeedsTranscript(true);
       setStoryboardDirty(true);
-      const placeholder: SceneSpec = { id: "uploaded-placeholder", start: 0, end: 1, kind: "keyword", eyebrow: "Source ready", title: "Listening to your story", detail: "Local Whisper is preparing the transcript." };
+      const placeholder: SceneSpec = { id: "uploaded-placeholder", start: 0, end: 1, kind: "keyword", eyebrow: "Source ready", title: "Comparing your transcript", detail: `${selectedTranscriptionModels.length} speech model${selectedTranscriptionModels.length === 1 ? " is" : "s are"} analyzing the first ${Math.round(projectDuration)} seconds.` };
       setScenes([placeholder]);
       setSelectedSceneId(placeholder.id);
       setShowImport(false);
@@ -304,23 +454,16 @@ export default function Studio() {
       setAnalysisProgress(28);
       const audio = await extractSpeechAudio(file);
       if (requestId !== analysisRequest.current) return;
-      setAnalysisStage("Starting multilingual Whisper");
+      sourceAudio.current = new Float32Array(audio);
+      setHasSourceAudio(true);
+      setAnalysisStage(`Starting ${selectedTranscriptionModels.length}-model transcription comparison`);
       setAnalysisProgress(42);
-      const result = await transcribeAudio(audio, requestId, controller.signal);
+      const result = await runTranscriptionComparison(audio, requestId, controller.signal, projectDuration);
       if (requestId !== analysisRequest.current) return;
       if (!result.text) throw new Error("No speech was detected. You can still paste a transcript manually.");
 
-      setAnalysisStage("Directing context-aware visual beats");
-      setAnalysisProgress(88);
-      const planned = planStoryboard({ transcript: result.text, words: result.words, duration: projectDuration, dopaminePacing });
-      setTranscript(result.text);
-      setWords(result.words);
-      setLanguage(planned.language);
-      setScenes(planned.scenes);
-      setSelectedSceneId(planned.scenes[0].id);
-      setNeedsTranscript(false);
-      setStoryboardDirty(false);
-      setActivePanel("scenes");
+      setAnalysisStage("Comparison ready — choose the transcript you prefer");
+      setActivePanel("captions");
       setAnalysisProgress(100);
       setAnalysisStage("Custom video ready");
     } catch (error) {
@@ -350,12 +493,16 @@ export default function Studio() {
     setCurrentFrame(0);
     const previousUrl = uploadUrl.current;
     uploadUrl.current = null;
+    sourceAudio.current = null;
+    setHasSourceAudio(false);
     setVideoUrl(null);
     setFileName("AI models — demo.mov");
     setSourceMeta({ duration: 18.2, width: 1080, height: 1920, size: 0 });
     setLanguage("EN");
     setTranscript(demoTranscript);
     setWords([]);
+    setTranscriptionRuns([]);
+    setAppliedTranscriptionModel(null);
     setScenes(demoScenes);
     setSelectedSceneId(demoScenes[0].id);
     setNeedsTranscript(false);
@@ -504,11 +651,14 @@ export default function Studio() {
           <div className="panel-titlebar"><span><Captions size={15} /> Transcript</span><small>{transcript.trim().split(/\s+/).filter(Boolean).length} words</small></div>
           <div className="panel-content transcript-content">
             <div className="section-heading"><div><span>Captions</span><strong>{languageName[language]} transcript</strong></div><span className="confidence"><BadgeCheck size={13} /> {words.length ? "Word timed" : "Estimated"}</span></div>
-            <div className="speech-model-row"><span><AudioLines size={15} /><span><strong>Whisper tiny</strong><small>Local / q8 WASM</small></span></span><em>Fast model</em></div>
+            <div className="speech-model-row"><span><AudioLines size={15} /><span><strong>{appliedModel?.label ?? "Transcription benchmark"}</strong><small>{appliedModel ? `${appliedModel.provider === "groq" ? "Groq cloud" : "On device"} · ${appliedModel.wordTimestamps ? "word timed" : "text only"}` : "Choose models below"}</small></span></span><em>{appliedModel ? "Applied" : `${selectedTranscriptionModels.length} selected`}</em></div>
+            <TranscriptionModelPicker selected={selectedTranscriptionModels} disabled={processing} onToggle={toggleTranscriptionModel} />
+            {hasSourceAudio ? <button className="secondary-action rerun-models" type="button" onClick={() => void rerunTranscriptionComparison()} disabled={processing}><RefreshCcw size={14} /> Run selected models on current audio</button> : null}
+            <TranscriptionComparisonResults runs={transcriptionRuns} appliedModelId={appliedTranscriptionModel} onApply={(run) => applyTranscription(run, sourceMeta.duration)} />
             {needsTranscript ? <div className="prototype-note"><Sparkles size={16} /><p>Local transcription could not finish for this source. Paste the transcript here; the context director will still build a custom storyboard.</p></div> : null}
             {storyboardDirty && transcript.trim() ? <div className="stale-note"><RefreshCcw size={14} /> Transcript changed - regenerate scenes before export.</div> : null}
             <label className="transcript-editor-label" htmlFor="transcript-editor"><span>Spoken text</span><small>Edit mistakes directly. Timing becomes estimated after a manual edit.</small></label>
-            <textarea id="transcript-editor" className="transcript-field transcript-field-persistent" value={transcript} onChange={(event) => { setTranscript(event.target.value); setWords([]); setStoryboardDirty(true); setNeedsTranscript(!event.target.value.trim()); setActivePanel("captions"); }} placeholder={language === "DE" ? "Transkript hier einfügen…" : language === "RU" ? "Вставьте расшифровку…" : "Paste transcript here…"} aria-label="Transcript" />
+            <textarea id="transcript-editor" className="transcript-field transcript-field-persistent" value={transcript} onChange={(event) => { setTranscript(event.target.value); setWords([]); setAppliedTranscriptionModel(null); setStoryboardDirty(true); setNeedsTranscript(!event.target.value.trim()); setActivePanel("captions"); }} placeholder={language === "DE" ? "Transkript hier einfügen…" : language === "RU" ? "Вставьте расшифровку…" : "Paste transcript here…"} aria-label="Transcript" />
             <button className="primary-action" type="button" onClick={() => redirectScenes()} disabled={!transcript.trim()}><WandSparkles size={16} /> Apply transcript and rebuild scenes</button>
             <div className="control-section"><div className="control-label"><span>Caption style</span><small>Live preview</small></div><div className="preset-grid">{([ ["punch", "PUNCH", "Fast & bold"], ["clean", "Clean", "Calm & modern"], ["editorial", "Editorial", "Premium serif"] ] as Array<[CaptionPreset, string, string]>).map(([value, label, detail]) => <button className={captionPreset === value ? "active" : ""} type="button" key={value} onClick={() => { setCaptionPreset(value); setActivePanel("captions"); }} aria-pressed={captionPreset === value}><strong className={"caption-sample " + value}>{label}</strong><small>{detail}</small></button>)}</div></div>
             <div className="toggle-row"><div><AudioLines size={17} /><span><strong>Word timing</strong><small>{words.length ? "Whisper timestamps" : "Estimated from duration"}</small></span></div><button className={"switch " + (wordTiming ? "on" : "")} role="switch" aria-checked={wordTiming} type="button" aria-label="Highlight active caption word" onClick={() => { setWordTiming((value) => !value); setActivePanel("captions"); }}><span /></button></div>
@@ -519,7 +669,7 @@ export default function Studio() {
           <div className="preview-toolbar"><div className="toolbar-group"><button className="tool-pill active" type="button" aria-pressed="true"><MousePointer2 size={15} /> Select</button><button className={`tool-pill ${sourceFit === "contain" ? "active" : ""}`} type="button" onClick={() => setSourceFit((value) => value === "cover" ? "contain" : "cover")} aria-pressed={sourceFit === "contain"}><Scissors size={15} /> {sourceFit === "cover" ? "Fill" : "Fit"}</button></div><div className="canvas-label"><MonitorPlay size={14} /> 1080 × 1920 <span>·</span> 30 FPS</div><button className="icon-button" type="button" onClick={() => setSoundEnabled((value) => !value)} aria-label="Toggle audio" aria-pressed={soundEnabled}>{soundEnabled ? <Volume2 size={17} /> : <VolumeX size={17} />}</button></div>
           <div className="player-stage"><div className="player-glow" /><div className="player-frame">
             <Player key={`${videoUrl ?? "demo"}-${durationInFrames}`} ref={playerRef} component={MotionComposition} inputProps={compositionProps} durationInFrames={durationInFrames} compositionWidth={1080} compositionHeight={1920} fps={FPS} controls={false} loop playbackRate={playbackRate} acknowledgeRemotionLicense style={{ width: "100%", height: "100%" }} />
-            {processing ? <div className="analysis-overlay"><span className="analysis-orb"><Sparkles size={25} /></span><strong>{analysisStage}</strong><p>{analysisProgress}% · private, on-device transcription</p><div className="analysis-bar"><span style={{ width: `${analysisProgress}%` }} /></div></div> : null}
+            {processing ? <div className="analysis-overlay"><span className="analysis-orb"><Sparkles size={25} /></span><strong>{analysisStage}</strong><p>{analysisProgress}% · {usesGroqTranscription ? "local + secure Groq comparison" : "private, on-device transcription"}</p><div className="analysis-bar"><span style={{ width: `${analysisProgress}%` }} /></div></div> : null}
           </div></div>
           {uploadError && !processing ? <div className="source-alert" role="alert"><AlertTriangle size={15} /><span>{uploadError}</span><button type="button" onClick={() => { setActivePanel("captions"); setUploadError(""); }}>Use transcript</button></div> : null}
           <div className="transport-bar"><button className="transport-play" type="button" onClick={togglePlayback} aria-label={isPlaying ? "Pause" : "Play"}>{isPlaying ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}</button><span className="timecode">{formatTime(currentFrame / FPS)}</span><input className="transport-line" type="range" min="0" max={Math.max(0, durationInFrames - 1)} value={Math.min(currentFrame, durationInFrames - 1)} onChange={handleSeek} aria-label="Video progress" style={{ "--progress": `${currentProgress * 100}%` } as CSSProperties} /><span className="timecode muted">{formatTime(sourceMeta.duration)}</span><button className="speed-pill" type="button" onClick={() => setPlaybackRate((value) => value === .5 ? 1 : value === 1 ? 1.5 : value === 1.5 ? 2 : .5)} aria-label={`Playback speed ${playbackRate} times`}>{playbackRate}×</button></div>
@@ -553,7 +703,28 @@ export default function Studio() {
         <div className="timeline-tracks"><div className="track-label"><Sparkles size={14} /><span>Motion</span></div><div className="track-scroll"><div className="scene-track" style={{ width: `${timelineZoom * 100}%` }}><i className="timeline-playhead" style={{ left: `${currentProgress * 100}%` }} />{scenes.map((scene, index) => { const Icon = sceneIcons[scene.kind]; return <button type="button" key={scene.id} className={`${scene.id === selectedScene?.id ? "selected" : ""} ${scene.id === playingSceneId ? "playing" : ""}`} style={{ width: `${Math.max(5, (scene.end - scene.start) * 100)}%` }} onClick={() => selectScene(scene)}><Icon size={13} /><span>{index + 1}. {sceneNames[scene.kind]}</span></button>; })}</div></div><div className="track-label"><Captions size={14} /><span>Captions</span></div><div className="track-scroll"><div className="caption-track" style={{ width: `${timelineZoom * 100}%` }}><span>{transcript || "Transcript required"}</span></div></div></div>
       </section>
 
-      {showImport ? <div className="modal-backdrop"><div className="import-modal" role="dialog" aria-modal="true" aria-labelledby="import-title"><button className="modal-close" type="button" onClick={() => setShowImport(false)} aria-label="Close upload" disabled={processing}><X size={18} /></button><span className="modal-kicker"><Sparkles size={14} /> New scroll stopper</span><h2 id="import-title">Drop in the raw talking head.</h2><p>Local Whisper detects English, German, or Russian and turns the actual speech into timed captions and grounded visual beats.</p>{uploadError ? <div className="modal-error" role="alert"><AlertTriangle size={16} />{uploadError}</div> : null}<button className={`dropzone ${dropActive ? "active" : ""}`} type="button" onClick={() => fileInput.current?.click()} onDragEnter={(event) => { event.preventDefault(); setDropActive(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDropActive(false)} onDrop={handleDrop} disabled={processing}><span>{processing ? <LoaderCircle className="spin" size={26} /> : <Upload size={26} />}</span><strong>{processing ? analysisStage : "Choose video or drop it here"}</strong><small>Up to 500 MB · first 90 seconds analyzed · browser-decodable MP4, MOV, WebM or MKV</small></button><input ref={fileInput} hidden type="file" accept="video/*,.mkv,.avi,.mov,.webm" onChange={(event) => { const file = event.target.files?.[0]; event.currentTarget.value = ""; if (file) void handleFile(file); }} /><div className="privacy-note"><BadgeCheck size={14} /> Video and transcription stay on this device. The speech model downloads once and is cached by your browser.</div><div className="modal-or"><span>or</span></div><button className="demo-button" type="button" onClick={loadDemo} disabled={processing}><Play size={15} fill="currentColor" /> Load the AI-models demo</button><div className="modal-features"><span><Check size={13} /> EN + DE + RU</span><span><Check size={13} /> Word timing</span><span><Check size={13} /> Context scenes</span></div></div></div> : null}
+      {showImport ? (
+        <div className="modal-backdrop">
+          <div className="import-modal" role="dialog" aria-modal="true" aria-labelledby="import-title">
+            <button className="modal-close" type="button" onClick={() => setShowImport(false)} aria-label="Close upload" disabled={processing}><X size={18} /></button>
+            <span className="modal-kicker"><Sparkles size={14} /> New scroll stopper</span>
+            <h2 id="import-title">Compare the words. Direct the meaning.</h2>
+            <p>Select one model for a fast run or several to benchmark the same English, German, or Russian clip.</p>
+            {uploadError ? <div className="modal-error" role="alert"><AlertTriangle size={16} />{uploadError}</div> : null}
+            <TranscriptionModelPicker selected={selectedTranscriptionModels} disabled={processing} onToggle={toggleTranscriptionModel} />
+            <button className={`dropzone ${dropActive ? "active" : ""}`} type="button" onClick={() => fileInput.current?.click()} onDragEnter={(event) => { event.preventDefault(); setDropActive(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDropActive(false)} onDrop={handleDrop} disabled={processing}>
+              <span>{processing ? <LoaderCircle className="spin" size={26} /> : <Upload size={26} />}</span>
+              <strong>{processing ? analysisStage : `Choose video · run ${selectedTranscriptionModels.length} model${selectedTranscriptionModels.length === 1 ? "" : "s"}`}</strong>
+              <small>Up to 500 MB · first 90 seconds analyzed · browser-decodable MP4, MOV, WebM or MKV</small>
+            </button>
+            <input ref={fileInput} hidden type="file" accept="video/*,.mkv,.avi,.mov,.webm" onChange={(event) => { const file = event.target.files?.[0]; event.currentTarget.value = ""; if (file) void handleFile(file); }} />
+            <div className="privacy-note"><BadgeCheck size={14} />{usesGroqTranscription ? "Selected local models stay on this device. A normalized WAV of the first 90 seconds is securely sent to Groq for selected cloud models." : "All selected transcription models run on this device and are cached by your browser."}</div>
+            <div className="modal-or"><span>or</span></div>
+            <button className="demo-button" type="button" onClick={loadDemo} disabled={processing}><Play size={15} fill="currentColor" /> Load the AI-models demo</button>
+            <div className="modal-features"><span><Check size={13} /> EN + DE + RU</span><span><Check size={13} /> Word timing</span><span><Check size={13} /> Side-by-side results</span></div>
+          </div>
+        </div>
+      ) : null}
 
       {renderStatus !== "idle" ? <div className={`render-toast ${renderStatus}`} role={renderStatus === "error" ? "alert" : "status"}><span className="render-icon">{renderStatus === "complete" ? <Check size={18} /> : renderStatus === "error" ? <X size={18} /> : <LoaderCircle className="spin" size={18} />}</span><div><strong>{renderStatus === "complete" ? "Export complete" : renderStatus === "error" ? "Export needs attention" : renderStatus === "checking" ? "Checking MP4 support" : "Rendering MP4"}</strong><p>{renderMessage}</p>{renderStatus === "rendering" ? <div className="render-progress"><span style={{ width: `${renderProgress}%` }} /></div> : null}</div>{renderStatus === "rendering" ? <button className="render-cancel" type="button" onClick={cancelRender}>Cancel {renderProgress}%</button> : <button type="button" onClick={() => setRenderStatus("idle")} aria-label="Dismiss export message"><X size={15} /></button>}</div> : null}
     </main>
