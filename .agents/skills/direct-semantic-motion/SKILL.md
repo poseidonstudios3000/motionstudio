@@ -11,6 +11,7 @@ Turn spoken meaning into timed visual direction while keeping every factual elem
 
 1. Verify the transcript before directing visuals. Mark uncertain words, names, numbers, and language switches; do not hide transcription uncertainty with confident graphics.
 2. Segment by semantic change, not fixed word count. Preserve word timestamps and split on claims, entities, contrasts, lists, questions, causes, and calls to action.
+   - Keep absolute media time. If speech begins after an intro, leave the motion layer empty until the first supported beat; never force the first scene to `0:00`.
 3. Extract an evidence ledger for every beat:
    - literal entities and attributes explicitly spoken;
    - relationships such as comparison, movement, competition, growth, or causation;
@@ -22,6 +23,8 @@ Turn spoken meaning into timed visual direction while keeping every factual elem
    - editorial metaphor for abstract meaning;
    - typography when no grounded visual improves understanding.
 5. Build synchronized cues. Reveal, emphasize, and retire each entity at its spoken timestamp. Do not show a later entity early unless the scene is explicitly introduced as an overview.
+   - Derive cue time from the exact entity phrase, not the containing sentence start.
+   - Preserve source timestamps through transcript spelling corrections.
 6. Emit typed, editable scene data. Keep evidence, literal assets, metaphors, and timing separate so a user can replace one without regenerating everything.
 7. Run the grounding and readability gates before implementation.
 
@@ -53,6 +56,7 @@ Use the schema and worked example in [references/scene-contract.md](references/s
 
 - Grounding: every literal element maps to spoken evidence or explicit user direction.
 - Synchronization: cue drift should be under 250 ms when word timing exists.
+- Pre-roll: no caption or semantic visual may appear before the first supported spoken word.
 - Comprehension: a silent viewer should recover the main relationship without reading decorative copy.
 - Restraint: use one primary idea per beat and no more than one supporting metaphor.
 - Editability: scene fields remain structured; do not bake meaning into an opaque generated video.
@@ -64,3 +68,4 @@ Use the schema and worked example in [references/scene-contract.md](references/s
 - Extend `SceneSpec` rather than passing untyped provider output into a composition.
 - Add positive and negative tests for every new entity or visual kind.
 - Keep provider secrets server-side and preserve evidence spans through any model-assisted enrichment.
+- For the current German talking-head workflow, route ranking/leaderboard language, score comparisons, crown/leadership phrases, same-price/no-price-increase claims, and numbered feature lists to distinct editable treatments. Keep numbers and brand order exactly as spoken.

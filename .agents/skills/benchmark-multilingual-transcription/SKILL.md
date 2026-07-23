@@ -34,9 +34,9 @@ Choose transcription architecture from repeatable evidence on representative tal
 
 - Local fast baseline: `Xenova/whisper-tiny`, WASM q8.
 - Local quality baseline: `Xenova/whisper-small`, WASM q8.
-- Cloud quality candidate: `gpt-4o-transcribe`.
-- Cloud cost candidate: `gpt-4o-mini-transcribe`.
-- Timestamp baseline: `whisper-1` with word timestamps.
+- Cloud fast candidate: Groq `whisper-large-v3-turbo` with word timestamps.
+- Cloud quality candidate: Groq `whisper-large-v3` with word timestamps.
+- Current German production candidate: Groq `whisper-large-v3`, explicit `de`, approved names-and-terms prompt, followed by human review.
 
 Treat model IDs and capabilities as current-source facts: verify official provider documentation before each evaluation cycle.
 
@@ -45,6 +45,7 @@ Treat model IDs and capabilities as current-source facts: verify official provid
 - Preserve meaning, negation, uncertainty, numbers, names, and language.
 - Correct only when audio evidence or an approved glossary supports the correction.
 - Keep raw and corrected transcripts side by side with a machine-readable edit log.
+- Preserve original word timestamps when a reviewer corrects spelling such as `Anthropic`; interpolate only edited or inserted tokens.
 - Never use a language model to silently rewrite style or strengthen claims.
 
 ## Decision Gate
@@ -56,5 +57,7 @@ Do not promote a candidate unless:
 - timing quality supports caption and visual synchronization;
 - failure, retry, privacy, cost, and file-size limits are documented;
 - the full model/revision/configuration is reproducible.
+
+For a German clip, do not generate motion scenes until the selected transcript has been reviewed for protected brands, product versions, rankings, numbers, negation, and price language. Treat `keinen Cent mehr` as “no increase,” not “free.”
 
 Use [references/evaluation-matrix.md](references/evaluation-matrix.md) for the required result schema and recommended launch thresholds.

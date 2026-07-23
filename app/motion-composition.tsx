@@ -4,18 +4,22 @@ import type { CSSProperties, ReactNode } from "react";
 import { AbsoluteFill, Easing, interpolate, spring, useCurrentFrame } from "remotion";
 import { Video } from "@remotion/media";
 import {
+  BadgeDollarSign,
   Bot,
   Braces,
   Code2,
+  Crown,
   FileCode2,
   FolderOpen,
   Gamepad2,
   GitBranch,
+  ListChecks,
   MapPin,
   MessageCircle,
   MousePointer2,
   Sparkles,
   Star,
+  Trophy,
   WandSparkles,
 } from "lucide-react";
 import { BsOpenai } from "react-icons/bs";
@@ -38,6 +42,22 @@ export type MotionStyle = "kinetic" | "clean" | "editorial";
 export type BrandKind = "openai" | "anthropic" | "gemini" | "glm" | "apple" | "google" | "meta" | "microsoft" | "amazon" | "tesla" | "nvidia";
 export type CountryKind = "us" | "china" | "germany" | "russia" | "india" | "eu" | "other";
 export type TimedWord = { text: string; start: number; end: number };
+export type SemanticEntityType = "country" | "brand" | "place" | "metric" | "platform" | "generic";
+export type SemanticEntity = {
+  id: string;
+  type: SemanticEntityType;
+  label: string;
+  evidence: string;
+  startSeconds: number;
+  endSeconds: number;
+  assetId?: string;
+};
+export type SemanticCue = {
+  entityId: string;
+  startSeconds: number;
+  endSeconds: number;
+  emphasis: "enter" | "focus" | "exit";
+};
 export type VisualKind =
   | "hook"
   | "brand"
@@ -49,6 +69,9 @@ export type VisualKind =
   | "travel"
   | "social"
   | "stat"
+  | "ranking"
+  | "price"
+  | "list"
   | "race"
   | "keyword";
 
@@ -65,9 +88,19 @@ export type SceneSpec = {
   countries?: CountryKind[];
   platforms?: Array<"instagram" | "tiktok" | "youtube">;
   metric?: string;
+  metrics?: string[];
   origin?: string;
   destination?: string;
   ctaLabel?: string;
+  startSeconds?: number;
+  endSeconds?: number;
+  evidence?: string;
+  intent?: string;
+  metaphor?: string;
+  entities?: SemanticEntity[];
+  cues?: SemanticCue[];
+  uncertainties?: string[];
+  rationale?: string;
 };
 
 export type MotionCompositionProps = {
@@ -174,7 +207,13 @@ const Stage = ({ eyebrow, accent, children }: { eyebrow: string; accent: string;
   </div>
 );
 
-type VisualProps = { localFrame: number; accent: string; scene: SceneSpec };
+type VisualProps = { localFrame: number; currentSeconds?: number; accent: string; scene: SceneSpec };
+
+const cueFrame = (scene: SceneSpec, entityId: string, currentSeconds: number, fallbackFrame: number) => {
+  const cue = scene.cues?.find((item) => item.entityId === entityId && item.emphasis === "enter");
+  if (!cue) return fallbackFrame;
+  return Math.max(0, (currentSeconds - cue.startSeconds) * 30);
+};
 
 const HookVisual = ({ localFrame, accent, scene }: VisualProps) => {
   const pop = spring({ fps: 30, frame: localFrame, config: { damping: 12, stiffness: 165, mass: 0.7 } });
@@ -315,14 +354,14 @@ const ContextVisual = ({ localFrame, accent, scene }: VisualProps) => {
   );
 };
 
-const CompareVisual = ({ localFrame, accent, scene }: VisualProps) => {
+const CompareVisual = ({ localFrame, currentSeconds, accent, scene }: VisualProps) => {
   const brands = (scene.brands ?? []).slice(0, 4);
   if (brands.length < 2) return <KeywordVisual localFrame={localFrame} accent={accent} scene={scene} />;
   return (
     <Stage eyebrow={scene.eyebrow} accent={accent}>
       <div style={{ display: "grid", gridTemplateColumns: brands.length === 2 ? "1fr 1fr" : "1fr 1fr", gap: 22, height: "100%" }}>
         {brands.map((brand, index) => {
-          const scale = spring({ fps: 30, frame: localFrame - index * 4, config: { damping: 14, stiffness: 155 } });
+          const scale = spring({ fps: 30, frame: cueFrame(scene, `brand-${brand}`, currentSeconds ?? scene.startSeconds ?? 0, localFrame - index * 4), config: { damping: 14, stiffness: 155 } });
           return <div key={brand} style={{ ...card(index === brands.length - 1 ? accent : "#f3f1e8"), display: "flex", alignItems: "center", gap: 25, padding: "0 30px", transform: `scale(${scale})`, opacity: scale }}><BrandMark brand={brand} size={68} /><div><div style={{ fontSize: 30, fontWeight: 900 }}>{brandLabels[brand]}</div><div style={{ color: "rgba(255,255,255,.45)", fontSize: 18, marginTop: 6 }}>Compared in context</div></div></div>;
         })}
       </div>
@@ -398,7 +437,54 @@ const StatVisual = ({ localFrame, accent, scene }: VisualProps) => {
   );
 };
 
-const RaceVisual = ({ localFrame, accent, scene }: VisualProps) => {
+const RankingVisual = ({ localFrame, currentSeconds, accent, scene }: VisualProps) => {
+  const brands = scene.brands?.length ? scene.brands.slice(0, 3) : scene.brand ? [scene.brand] : [];
+  const metrics = scene.metrics?.length ? scene.metrics : scene.metric ? [scene.metric] : [];
+  if (!brands.length) return <StatVisual localFrame={localFrame} accent={accent} scene={scene} />;
+  const rankedFirst = /(?:platz|rank(?:ed)?)\s*(?:1|one)|#1|spitzenplatz/i.test(scene.evidence ?? scene.detail);
+  return (
+    <Stage eyebrow={scene.eyebrow} accent={accent}>
+      <div style={{ ...card(accent), position: "absolute", inset: 0, padding: 42, overflow: "hidden" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div><div style={{ color: accent, fontSize: 20, fontWeight: 900, letterSpacing: ".14em", textTransform: "uppercase" }}>Spoken comparison</div><div style={{ marginTop: 8, fontSize: 56, lineHeight: .92, fontWeight: 950, letterSpacing: "-.055em" }}>{scene.title}</div></div>
+          <Trophy color={accent} size={82} strokeWidth={1.5} />
+        </div>
+        <div style={{ display: "grid", gap: 14, marginTop: 34 }}>
+          {brands.map((brand, index) => {
+            const enterFrame = cueFrame(scene, `brand-${brand}`, currentSeconds ?? scene.startSeconds ?? 0, localFrame - index * 5);
+            const reveal = spring({ fps: 30, frame: enterFrame, config: { damping: 14, stiffness: 155 } });
+            return <div key={brand} style={{ display: "grid", gridTemplateColumns: "58px 74px 1fr auto", alignItems: "center", gap: 18, minHeight: 92, padding: "0 24px", borderRadius: 22, border: `1px solid ${index === 0 ? accent : "rgba(255,255,255,.12)"}`, backgroundColor: index === 0 ? `${accent}18` : "rgba(255,255,255,.035)", opacity: reveal, transform: `translateX(${(1 - reveal) * 80}px)` }}><strong style={{ color: index === 0 ? accent : "rgba(255,255,255,.42)", fontSize: 28, fontVariantNumeric: "tabular-nums" }}>{rankedFirst && index === 0 ? "01" : String.fromCharCode(65 + index)}</strong><div style={{ width: 62, height: 62, display: "grid", placeItems: "center", borderRadius: 18, backgroundColor: "#f6f5ef", color: "#090a0b" }}><BrandMark brand={brand} size={38} /></div><strong style={{ fontSize: 28 }}>{brandLabels[brand]}</strong><strong style={{ color: index === 0 ? accent : "white", fontSize: 34, fontVariantNumeric: "tabular-nums" }}>{metrics[index] ?? (rankedFirst && index === 0 ? "LEAD" : "—")}</strong></div>;
+          })}
+        </div>
+        {/krone|crown|spitze|lead|platz\s*1/i.test(scene.evidence ?? scene.detail) ? <Crown color={accent} size={62} style={{ position: "absolute", right: 48, bottom: 38, transform: `rotate(${Math.sin(localFrame * .08) * 4}deg)` }} /> : null}
+      </div>
+    </Stage>
+  );
+};
+
+const PriceVisual = ({ localFrame, accent, scene }: VisualProps) => {
+  const reveal = spring({ fps: 30, frame: localFrame, config: { damping: 13, stiffness: 150 } });
+  const noIncrease = /(?:keinen cent mehr|ohne preiserh[oö]hung|gleicher preis|no price increase|same price)/i.test(scene.evidence ?? scene.detail);
+  return (
+    <Stage eyebrow={scene.eyebrow} accent={accent}>
+      <div style={{ ...card(accent), position: "absolute", inset: 0, display: "grid", gridTemplateColumns: ".85fr 1.15fr", gap: 30, alignItems: "center", padding: 48 }}>
+        <div style={{ width: 250, height: 250, display: "grid", placeItems: "center", borderRadius: 999, border: `3px solid ${accent}`, backgroundColor: `${accent}18`, transform: `scale(${.72 + reveal * .28})` }}><BadgeDollarSign color={accent} size={145} strokeWidth={1.35} /></div>
+        <div><div style={{ color: accent, fontSize: 118, lineHeight: .82, fontWeight: 950, letterSpacing: "-.07em", fontVariantNumeric: "tabular-nums" }}>{noIncrease ? "€0" : scene.metric ?? "PRICE"}</div><div style={{ marginTop: 24, fontSize: 55, lineHeight: .95, fontWeight: 950, letterSpacing: "-.05em" }}>{noIncrease ? "PREISERHÖHUNG" : scene.title}</div><div style={{ marginTop: 20, color: "rgba(255,255,255,.52)", fontSize: 24, lineHeight: 1.25 }}>{scene.evidence ?? scene.detail}</div></div>
+      </div>
+    </Stage>
+  );
+};
+
+const ListVisual = ({ localFrame, accent, scene }: VisualProps) => (
+  <Stage eyebrow={scene.eyebrow} accent={accent}>
+    <div style={{ ...card(accent), position: "absolute", inset: 0, padding: 46 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 22 }}><ListChecks color={accent} size={70} /><div style={{ fontSize: 58, lineHeight: .94, fontWeight: 950, letterSpacing: "-.055em" }}>{scene.title}</div></div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16, marginTop: 50 }}>{[1, 2, 3].map((number, index) => { const reveal = spring({ fps: 30, frame: localFrame - index * 6, config: { damping: 14, stiffness: 150 } }); return <div key={number} style={{ minHeight: 235, padding: 26, borderRadius: 24, border: `1px solid ${index === 0 ? accent : "rgba(255,255,255,.11)"}`, backgroundColor: index === 0 ? `${accent}18` : "rgba(255,255,255,.035)", opacity: reveal, transform: `translateY(${(1 - reveal) * 60}px)` }}><strong style={{ color: accent, fontSize: 56, fontVariantNumeric: "tabular-nums" }}>0{number}</strong><div style={{ marginTop: 52, color: "rgba(255,255,255,.62)", fontSize: 20, lineHeight: 1.25 }}>{index === 0 ? scene.detail : "…"}</div></div>; })}</div>
+    </div>
+  </Stage>
+);
+
+const RaceVisual = ({ localFrame, currentSeconds, accent, scene }: VisualProps) => {
   const competitors = scene.countries?.length ? scene.countries.slice(0, 4) : ["other" as const];
   return (
     <Stage eyebrow={scene.eyebrow} accent={accent}>
@@ -413,12 +499,14 @@ const RaceVisual = ({ localFrame, accent, scene }: VisualProps) => {
         <div style={{ display: "grid", gap: 12 }}>
           {competitors.map((country, index) => {
             const meta = countryMeta[country];
-            const drive = interpolate(localFrame - index * 5, [0, 34], [0, 1], clamp);
+            const enterFrame = cueFrame(scene, `country-${country}`, currentSeconds ?? scene.startSeconds ?? 0, localFrame - index * 5);
+            const drive = interpolate(enterFrame, [0, 34], [0, 1], clamp);
+            const visible = scene.cues?.some((cue) => cue.entityId === `country-${country}`) ? enterFrame > 0 : true;
             const lead = index % 2 === 0 ? 44 : 0;
             return (
               <div key={country} style={{ position: "relative", height: 92, overflow: "hidden", borderRadius: 20, backgroundColor: "rgba(255,255,255,.045)", border: "1px solid rgba(255,255,255,.09)" }}>
                 {[1, 2, 3, 4, 5].map((mark) => <span key={mark} style={{ position: "absolute", left: mark * 145 - (localFrame * 7 % 145), top: 44, width: 78, height: 3, borderRadius: 8, backgroundColor: "rgba(255,255,255,.16)" }} />)}
-                <div style={{ position: "absolute", left: 16 + drive * (580 + lead), top: 12, width: 142, height: 68, display: "flex", alignItems: "center", gap: 10, padding: "0 14px", borderRadius: 18, backgroundColor: country === "other" ? "#242832" : accent, color: "white", boxShadow: country === "other" ? "none" : `0 0 28px ${accent}55`, transform: `rotate(${Math.sin(localFrame * .18 + index) * 1.8}deg)` }}>
+                <div style={{ position: "absolute", left: 16 + drive * (580 + lead), top: 12, width: 142, height: 68, display: "flex", alignItems: "center", gap: 10, padding: "0 14px", borderRadius: 18, backgroundColor: country === "other" ? "#242832" : accent, color: "white", boxShadow: country === "other" ? "none" : `0 0 28px ${accent}55`, opacity: visible ? 1 : 0, transform: `rotate(${Math.sin(localFrame * .18 + index) * 1.8}deg)` }}>
                   <Bot size={37} strokeWidth={2.2} />
                   <span style={{ fontSize: 29 }}>{meta.flag}</span>
                   <strong style={{ fontSize: 15, textTransform: "uppercase" }}>{meta.label}</strong>
@@ -456,6 +544,9 @@ const VisualStage = (props: VisualProps) => {
   if (props.scene.kind === "travel") return <TravelVisual {...props} />;
   if (props.scene.kind === "social") return <SocialVisual {...props} />;
   if (props.scene.kind === "stat") return <StatVisual {...props} />;
+  if (props.scene.kind === "ranking") return <RankingVisual {...props} />;
+  if (props.scene.kind === "price") return <PriceVisual {...props} />;
+  if (props.scene.kind === "list") return <ListVisual {...props} />;
   if (props.scene.kind === "race") return <RaceVisual {...props} />;
   return <KeywordVisual {...props} />;
 };
@@ -501,7 +592,7 @@ const CaptionLayer = ({ transcript, words, preset, accent, currentSeconds, durat
 export const MotionComposition = ({ videoUrl, transcript, scenes, captionPreset, motionStyle, accent, projectName, durationInFrames, soundEnabled, words, wordTiming, captionOffset, captionScale, sourceFit }: MotionCompositionProps) => {
   const frame = useCurrentFrame();
   const progress = frame / Math.max(1, durationInFrames - 1);
-  const activeScene = scenes.find((scene) => progress >= scene.start && progress < scene.end) ?? scenes[scenes.length - 1];
+  const activeScene = scenes.find((scene) => progress >= scene.start && progress < scene.end);
   const sceneStartFrame = Math.ceil((activeScene?.start ?? 0) * Math.max(1, durationInFrames - 1));
   const localFrame = Math.max(0, frame - sceneStartFrame);
   const sceneEntry = ease(localFrame, 0, 10);
@@ -509,7 +600,7 @@ export const MotionComposition = ({ videoUrl, transcript, scenes, captionPreset,
   return (
     <AbsoluteFill style={{ backgroundColor: background, color: "#f7f6f0", fontFamily: "Inter,Arial,Helvetica,sans-serif", overflow: "hidden" }}>
       <div style={{ position: "absolute", left: 0, top: 0, right: 0, height: 1015, opacity: sceneEntry, transform: `translateY(${(1 - sceneEntry) * 20}px)` }}>
-        {activeScene ? <VisualStage localFrame={localFrame} accent={accent} scene={activeScene} /> : null}
+        {activeScene ? <VisualStage localFrame={localFrame} currentSeconds={frame / 30} accent={accent} scene={activeScene} /> : null}
       </div>
       <div style={{ position: "absolute", left: 0, top: 1005, right: 0, bottom: 0, backgroundColor: "#13161b" }}>
         {videoUrl ? <Video src={videoUrl} objectFit={sourceFit} premountFor={30} disallowFallbackToOffthreadVideo volume={soundEnabled ? 1 : 0} style={{ width: "100%", height: "100%", backgroundColor: "#08090b" }} /> : <TalkingHeadPlaceholder accent={accent} frame={frame} />}

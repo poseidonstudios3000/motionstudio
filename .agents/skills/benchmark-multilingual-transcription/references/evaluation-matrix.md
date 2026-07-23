@@ -43,4 +43,6 @@ Start with at least five clips per launch language:
 4. proper nouns, brands, countries, and numbers;
 5. code-switching or borrowed English technical terms.
 
+The German proper-noun fixture should include AI brands and model names such as Anthropic, Claude, OpenAI, ChatGPT, GPT, Gemini, and product-version numbers. Score the raw model output and the reviewer-corrected output separately; never hide a brand correction inside the reference transcript.
+
 Add negative fixtures for silence, no speech, corrupt audio, unsupported codecs, and over-limit files.
