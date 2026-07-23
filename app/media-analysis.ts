@@ -1,4 +1,4 @@
-import { ALL_FORMATS, AudioBufferSink, BlobSource, Input } from "mediabunny";
+import { ALL_FORMATS, AudioBufferSink, BlobSource, CanvasSink, Input } from "mediabunny";
 import type { TimedWord } from "./motion-composition";
 
 export type MediaMetadata = {
@@ -36,6 +36,20 @@ export const inspectMedia = async (file: File): Promise<MediaMetadata> => {
       audioTrack ? audioTrack.canDecode() : Promise.resolve(false),
     ]);
     return { duration, width, height, size: file.size, mimeType, canPreviewVideo, canDecodeAudio };
+  } finally {
+    input.dispose();
+  }
+};
+
+export const validateFirstVideoFrame = async (file: File) => {
+  const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(file) });
+  try {
+    const videoTrack = await input.getPrimaryVideoTrack();
+    if (!videoTrack) throw new Error("No video track was found in this file.");
+    if (!(await videoTrack.canDecode())) throw new Error("This video codec cannot be decoded for export.");
+    const firstTimestamp = await videoTrack.getFirstTimestamp();
+    const frame = await new CanvasSink(videoTrack, { width: 64 }).getCanvas(firstTimestamp);
+    if (!frame) throw new Error("The first source frame could not be decoded for export.");
   } finally {
     input.dispose();
   }
@@ -97,4 +111,3 @@ export const normalizeTimedWords = (chunks: Array<{ text?: string; timestamp?: [
       end: Math.max(chunk.timestamp?.[0] ?? 0, chunk.timestamp?.[1] ?? chunk.timestamp?.[0] ?? 0),
     }))
     .filter((word) => word.text.length > 0);
-

@@ -83,6 +83,37 @@ const titleFromText = (text: string, fallback: string) => {
   return words.slice(0, 7).join(" ") + (words.length > 7 ? "…" : "");
 };
 
+const listOrdinalPattern = /\b(?:erst(?:ens|e|er|es|en)?|zweit(?:ens|e|er|es|en)?|dritt(?:ens|e|er|es|en)?|viert(?:ens|e|er|es|en)?|f(?:u|ü)nft(?:ens|e|er|es|en)?|first(?:ly)?|second(?:ly)?|third(?:ly)?|fourth(?:ly)?|fifth(?:ly)?)\b/iu;
+
+const getListIndex = (text: string) => {
+  if (/\b(?:erst(?:ens|e|er|es|en)?|first(?:ly)?)\b/iu.test(text)) return 1;
+  if (/\b(?:zweit(?:ens|e|er|es|en)?|second(?:ly)?)\b/iu.test(text)) return 2;
+  if (/\b(?:dritt(?:ens|e|er|es|en)?|third(?:ly)?)\b/iu.test(text)) return 3;
+  if (/\b(?:viert(?:ens|e|er|es|en)?|fourth(?:ly)?)\b/iu.test(text)) return 4;
+  if (/\b(?:f(?:u|ü)nft(?:ens|e|er|es|en)?|fifth(?:ly)?)\b/iu.test(text)) return 5;
+  return undefined;
+};
+
+const listCountWords: Record<string, number> = { zwei: 2, two: 2, "2": 2, drei: 3, three: 3, "3": 3, vier: 4, four: 4, "4": 4, funf: 5, fuenf: 5, "fünf": 5, five: 5, "5": 5 };
+
+const getListTotal = (text: string) => {
+  const stated = text.match(/\b(zwei|drei|vier|f(?:u|ü)nf|fuenf|two|three|four|five|[2-5])\s+(?:sachen|punkte|gr(?:u|ü)nde|argumente|things|points|reasons|arguments)\b/iu)?.[1];
+  if (stated) return listCountWords[stated.toLocaleLowerCase()] ?? 3;
+  const ordinals = Array.from(text.matchAll(new RegExp(listOrdinalPattern.source, "giu")), (match) => getListIndex(match[0]) ?? 0);
+  return ordinals.length ? Math.max(...ordinals) : undefined;
+};
+
+const keywordStopWords = new Set([
+  "aber", "also", "and", "are", "auf", "das", "der", "die", "drei", "ein", "eine", "for", "ist", "mit", "neu", "sachen", "sind", "the", "this", "und", "von", "wir", "you", "your",
+]);
+
+const keyPhraseFromText = (text: string, fallback: string) => {
+  const cleaned = text.replace(listOrdinalPattern, " ").replace(/[^\p{L}\p{N}%€$-]+/gu, " ").trim();
+  const meaningful = cleaned.split(/\s+/).filter(Boolean).filter((word) => !keywordStopWords.has(word.toLocaleLowerCase()));
+  const selected = (meaningful.length ? meaningful : cleaned.split(/\s+/).filter(Boolean)).slice(0, 3);
+  return selected.join(" ").slice(0, 34) || fallback;
+};
+
 type Beat = {
   text: string;
   start: number;
@@ -161,7 +192,7 @@ const classify = (text: string, index: number, brands: BrandKind[], platforms: S
   if (/\b(travel|trip|flight|journey|route|reise|reisen|flug|roadtrip)\b/i.test(text) || /\b(?:from|von)\s+.+\s+(?:to|nach)\s+/i.test(text)) return "travel";
   if (/\b(?:keinen cent mehr|ohne preiserh[oö]hung|gleicher preis|kostenlos|preis|preise|price|pricing|cost|free)\b/i.test(text)) return "price";
   if (/\b(?:ranking|rangliste|platz\s*1|spitzenplatz|krone|crown|leaderboard|f[uü]hrung|lead)\b/i.test(text) || (getMetrics(text).length > 1 && brands.length > 0)) return "ranking";
-  if (/\b(?:drei sachen|drei punkte|three things|three points|erstens|zweitens|drittens)\b/i.test(text)) return "list";
+  if (getListTotal(text) || getListIndex(text)) return "list";
   if (getMetric(text)) return "stat";
   if (hasCompetitionMeaning(text) || (competitionContext && countries.length > 0)) return "race";
   if (/\b(game|gaming|gameplay|mechanic|physics|controller|spiel|spielen|mechanik|physik)\b/i.test(text)) return "mechanics";
@@ -295,6 +326,7 @@ export const planStoryboard = ({
   const safeDuration = Math.max(1, duration);
   const beats = makeBeats(transcript, words, safeDuration, dopaminePacing);
   const competitionContext = hasCompetitionMeaning(transcript);
+  const transcriptListTotal = getListTotal(transcript);
 
   const scenes = beats.map((beat, index) => {
     const brands = getBrands(beat.text);
@@ -318,6 +350,7 @@ export const planStoryboard = ({
       kind,
       eyebrow: eyebrowFor(kind, language),
       title: titleFromText(beat.text, language === "DE" ? "Deine Kernidee" : language === "RU" ? "Ключевая идея" : "Your key idea"),
+      keyPhrase: keyPhraseFromText(beat.text, language === "DE" ? "Kernidee" : "Key idea"),
       detail: beat.text,
       brand: brands[0],
       brands,
@@ -325,6 +358,8 @@ export const planStoryboard = ({
       platforms,
       metric,
       metrics,
+      listIndex: kind === "list" ? getListIndex(beat.text) : undefined,
+      listTotal: kind === "list" ? transcriptListTotal ?? 3 : undefined,
       ...route,
       ctaLabel: language === "DE" ? "Schreib einen Kommentar" : language === "RU" ? "Оставь комментарий" : "Leave a comment",
       startSeconds: sourceStart,

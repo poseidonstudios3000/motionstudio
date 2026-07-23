@@ -17,8 +17,11 @@ type DirectedScene = {
   startSeconds: number;
   endSeconds: number;
   evidence: string;
+  keyPhrase?: string; // 0-3 evidence-grounded words for the upper motion layer
   intent: string;
   visualKind: string;
+  listIndex?: number; // spoken ordinal for an ordered argument
+  listTotal?: number; // stated or conservatively inferred list length
   metaphor?: string;
   entities: Array<{
     id: string;

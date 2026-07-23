@@ -9,6 +9,7 @@ import {
   Braces,
   Code2,
   Crown,
+  Check,
   FileCode2,
   FolderOpen,
   Gamepad2,
@@ -36,6 +37,7 @@ import {
   SiYoutube,
 } from "react-icons/si";
 import { createCaptionCues, estimateTimedWords, shiftTimedWords } from "./caption-timing";
+import { LOCAL_RENDER_MEDIA_TIMEOUT_MS } from "./export-settings";
 
 export type CaptionPreset = "punch" | "clean" | "editorial";
 export type MotionStyle = "kinetic" | "clean" | "editorial";
@@ -89,6 +91,9 @@ export type SceneSpec = {
   platforms?: Array<"instagram" | "tiktok" | "youtube">;
   metric?: string;
   metrics?: string[];
+  keyPhrase?: string;
+  listIndex?: number;
+  listTotal?: number;
   origin?: string;
   destination?: string;
   ctaLabel?: string;
@@ -209,6 +214,11 @@ const Stage = ({ eyebrow, accent, children }: { eyebrow: string; accent: string;
 
 type VisualProps = { localFrame: number; currentSeconds?: number; accent: string; scene: SceneSpec };
 
+export const visualPhrase = (scene: SceneSpec) => {
+  const source = (scene.keyPhrase || scene.title || "Key idea").replace(/[^\p{L}\p{N}%€$-]+/gu, " ").trim();
+  return source.split(/\s+/).filter(Boolean).slice(0, 3).join(" ").slice(0, 34) || "Key idea";
+};
+
 const cueFrame = (scene: SceneSpec, entityId: string, currentSeconds: number, fallbackFrame: number) => {
   const cue = scene.cues?.find((item) => item.entityId === entityId && item.emphasis === "enter");
   if (!cue) return fallbackFrame;
@@ -241,7 +251,7 @@ const HookVisual = ({ localFrame, accent, scene }: VisualProps) => {
           {/game|gaming|spiel/i.test(`${scene.title} ${scene.detail}`) ? <Gamepad2 color={accent} size={110} strokeWidth={1.6} /> : <Star color={accent} size={100} strokeWidth={1.5} />}
         </div>
         <div style={{ position: "relative", marginTop: 48, maxWidth: 700, fontSize: 90, lineHeight: 0.9, letterSpacing: "-.075em", fontWeight: 950, textTransform: "uppercase" }}>
-          {scene.title}
+          {visualPhrase(scene)}
         </div>
       </div>
       <div
@@ -276,7 +286,7 @@ const BrandVisual = ({ localFrame, accent, scene }: VisualProps) => {
       <div style={{ ...card(accent), position: "absolute", inset: 0, overflow: "hidden", display: "grid", placeItems: "center", textAlign: "center", padding: 58 }}>
         {[0, 1, 2].map((ring) => <div key={ring} style={{ position: "absolute", width: 280 + ring * 170, height: 280 + ring * 170, borderRadius: 999, border: `2px solid ${accent}${ring === 0 ? "55" : "22"}`, transform: `scale(${0.72 + pop * 0.28}) rotate(${localFrame * (ring % 2 ? -0.35 : 0.35)}deg)` }} />)}
         <div style={{ position: "relative", width: 230, height: 230, display: "grid", placeItems: "center", borderRadius: 58, backgroundColor: "#f6f5ef", color: "#090a0b", transform: `scale(${pop})`, boxShadow: `0 0 85px ${accent}38` }}><BrandMark brand={scene.brand} size={130} /></div>
-        <div style={{ position: "absolute", left: 50, right: 50, bottom: 48, fontSize: 62, lineHeight: .96, fontWeight: 950, letterSpacing: "-.055em", textTransform: "uppercase" }}>{scene.title}</div>
+        <div style={{ position: "absolute", left: 50, right: 50, bottom: 48, fontSize: 62, lineHeight: .96, fontWeight: 950, letterSpacing: "-.055em", textTransform: "uppercase" }}>{visualPhrase(scene)}</div>
       </div>
     </Stage>
   );
@@ -376,7 +386,7 @@ const CtaVisual = ({ localFrame, accent, scene }: VisualProps) => {
     <Stage eyebrow={scene.eyebrow} accent={accent}>
       <div style={{ ...card(accent), position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", transform: `scale(${0.76 + scale * 0.24})` }}>
         <MessageCircle size={110} color={accent} strokeWidth={1.5} />
-        <div style={{ marginTop: 32, maxWidth: 720, fontSize: 78, lineHeight: 0.92, letterSpacing: "-.07em", fontWeight: 950, textTransform: "uppercase" }}>{scene.title}</div>
+        <div style={{ marginTop: 32, maxWidth: 720, fontSize: 78, lineHeight: 0.92, letterSpacing: "-.07em", fontWeight: 950, textTransform: "uppercase" }}>{visualPhrase(scene)}</div>
         <div style={{ marginTop: 38, padding: "20px 30px", borderRadius: 22, backgroundColor: accent, color: "#070809", fontWeight: 950, fontSize: 28, textTransform: "uppercase", letterSpacing: ".04em" }}>{scene.ctaLabel ?? "Leave a comment"}</div>
         <MousePointer2 size={62} fill="white" color="black" style={{ position: "absolute", bottom: 44, right: 160 + cursorX, transform: "rotate(-15deg)" }} />
       </div>
@@ -393,7 +403,7 @@ const TravelVisual = ({ localFrame, accent, scene }: VisualProps) => {
         <div style={{ position: "absolute", right: 72, bottom: 105, maxWidth: 350, textAlign: "right", fontSize: 54, fontWeight: 950 }}>{scene.destination ?? "DESTINATION"}</div>
         <div style={{ position: "absolute", left: 175, top: 285, width: 560 * line, height: 6, borderRadius: 10, backgroundColor: accent, boxShadow: `0 0 25px ${accent}`, transform: "rotate(22deg)", transformOrigin: "left center" }} />
         <MapPin size={70} color={accent} fill={accent} style={{ position: "absolute", left: 140 + 520 * line, top: 235 + 205 * line }} />
-        <div style={{ position: "absolute", left: 46, right: 46, bottom: 32, fontSize: 55, fontWeight: 950, letterSpacing: "-.05em", textTransform: "uppercase" }}>{scene.title}</div>
+        <div style={{ position: "absolute", left: 46, right: 46, bottom: 32, fontSize: 55, fontWeight: 950, letterSpacing: "-.05em", textTransform: "uppercase" }}>{visualPhrase(scene)}</div>
       </div>
     </Stage>
   );
@@ -430,7 +440,7 @@ const StatVisual = ({ localFrame, accent, scene }: VisualProps) => {
       <div style={{ ...card(accent), position: "absolute", inset: 0, padding: 48 }}>
         <div style={{ display: "flex", justifyContent: "space-between", color: "rgba(255,255,255,.45)", fontSize: 24, fontWeight: 800 }}><span>PERFORMANCE</span><WandSparkles color={accent} size={54} /></div>
         <div style={{ marginTop: 30, fontSize: displayMetric.length > 9 ? 126 : 190, lineHeight: 0.9, fontWeight: 950, color: accent }}>{displayMetric}</div>
-        <div style={{ fontSize: 54, lineHeight: 1, fontWeight: 900, letterSpacing: "-.04em" }}>{scene.title}</div>
+        <div style={{ fontSize: 54, lineHeight: 1, fontWeight: 900, letterSpacing: "-.04em" }}>{visualPhrase(scene)}</div>
         <div style={{ position: "absolute", left: 48, right: 48, bottom: 48, height: 22, borderRadius: 20, backgroundColor: "rgba(255,255,255,.1)", overflow: "hidden" }}><div style={{ height: "100%", width: `${Math.min(100, target ? count / target * 100 : 0)}%`, borderRadius: 20, backgroundColor: accent }} /></div>
       </div>
     </Stage>
@@ -446,7 +456,7 @@ const RankingVisual = ({ localFrame, currentSeconds, accent, scene }: VisualProp
     <Stage eyebrow={scene.eyebrow} accent={accent}>
       <div style={{ ...card(accent), position: "absolute", inset: 0, padding: 42, overflow: "hidden" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div><div style={{ color: accent, fontSize: 20, fontWeight: 900, letterSpacing: ".14em", textTransform: "uppercase" }}>Spoken comparison</div><div style={{ marginTop: 8, fontSize: 56, lineHeight: .92, fontWeight: 950, letterSpacing: "-.055em" }}>{scene.title}</div></div>
+          <div><div style={{ color: accent, fontSize: 20, fontWeight: 900, letterSpacing: ".14em", textTransform: "uppercase" }}>Spoken comparison</div><div style={{ marginTop: 8, fontSize: 56, lineHeight: .92, fontWeight: 950, letterSpacing: "-.055em" }}>{visualPhrase(scene)}</div></div>
           <Trophy color={accent} size={82} strokeWidth={1.5} />
         </div>
         <div style={{ display: "grid", gap: 14, marginTop: 34 }}>
@@ -469,20 +479,37 @@ const PriceVisual = ({ localFrame, accent, scene }: VisualProps) => {
     <Stage eyebrow={scene.eyebrow} accent={accent}>
       <div style={{ ...card(accent), position: "absolute", inset: 0, display: "grid", gridTemplateColumns: ".85fr 1.15fr", gap: 30, alignItems: "center", padding: 48 }}>
         <div style={{ width: 250, height: 250, display: "grid", placeItems: "center", borderRadius: 999, border: `3px solid ${accent}`, backgroundColor: `${accent}18`, transform: `scale(${.72 + reveal * .28})` }}><BadgeDollarSign color={accent} size={145} strokeWidth={1.35} /></div>
-        <div><div style={{ color: accent, fontSize: 118, lineHeight: .82, fontWeight: 950, letterSpacing: "-.07em", fontVariantNumeric: "tabular-nums" }}>{noIncrease ? "€0" : scene.metric ?? "PRICE"}</div><div style={{ marginTop: 24, fontSize: 55, lineHeight: .95, fontWeight: 950, letterSpacing: "-.05em" }}>{noIncrease ? "PREISERHÖHUNG" : scene.title}</div><div style={{ marginTop: 20, color: "rgba(255,255,255,.52)", fontSize: 24, lineHeight: 1.25 }}>{scene.evidence ?? scene.detail}</div></div>
+        <div><div style={{ color: accent, fontSize: 118, lineHeight: .82, fontWeight: 950, letterSpacing: "-.07em", fontVariantNumeric: "tabular-nums" }}>{noIncrease ? "€0" : scene.metric ?? "PRICE"}</div><div style={{ marginTop: 24, fontSize: 55, lineHeight: .95, fontWeight: 950, letterSpacing: "-.05em" }}>{noIncrease ? "PREISERHÖHUNG" : visualPhrase(scene)}</div></div>
       </div>
     </Stage>
   );
 };
 
-const ListVisual = ({ localFrame, accent, scene }: VisualProps) => (
-  <Stage eyebrow={scene.eyebrow} accent={accent}>
-    <div style={{ ...card(accent), position: "absolute", inset: 0, padding: 46 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 22 }}><ListChecks color={accent} size={70} /><div style={{ fontSize: 58, lineHeight: .94, fontWeight: 950, letterSpacing: "-.055em" }}>{scene.title}</div></div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16, marginTop: 50 }}>{[1, 2, 3].map((number, index) => { const reveal = spring({ fps: 30, frame: localFrame - index * 6, config: { damping: 14, stiffness: 150 } }); return <div key={number} style={{ minHeight: 235, padding: 26, borderRadius: 24, border: `1px solid ${index === 0 ? accent : "rgba(255,255,255,.11)"}`, backgroundColor: index === 0 ? `${accent}18` : "rgba(255,255,255,.035)", opacity: reveal, transform: `translateY(${(1 - reveal) * 60}px)` }}><strong style={{ color: accent, fontSize: 56, fontVariantNumeric: "tabular-nums" }}>0{number}</strong><div style={{ marginTop: 52, color: "rgba(255,255,255,.62)", fontSize: 20, lineHeight: 1.25 }}>{index === 0 ? scene.detail : "…"}</div></div>; })}</div>
-    </div>
-  </Stage>
-);
+const ListVisual = ({ localFrame, accent, scene }: VisualProps) => {
+  const total = Math.min(5, Math.max(2, scene.listTotal ?? 3));
+  const active = Math.min(total, Math.max(0, scene.listIndex ?? 0));
+  return (
+    <Stage eyebrow={scene.eyebrow} accent={accent}>
+      <div style={{ ...card(accent), position: "absolute", inset: 0, display: "grid", alignContent: "center", padding: 54, overflow: "hidden" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 20 }}><ListChecks color={accent} size={72} /><strong style={{ fontSize: 28, letterSpacing: ".14em" }}>{total}-PART FLOW</strong></div>
+          <strong style={{ color: active ? accent : "rgba(255,255,255,.4)", fontSize: 58, fontVariantNumeric: "tabular-nums" }}>{active ? `${active}/${total}` : `0/${total}`}</strong>
+        </div>
+        <div style={{ position: "relative", display: "grid", gridTemplateColumns: `repeat(${total}, 1fr)`, gap: 22, marginTop: 72 }}>
+          <div style={{ position: "absolute", left: 46, right: 46, top: 48, height: 5, borderRadius: 8, backgroundColor: "rgba(255,255,255,.1)" }} />
+          <div style={{ position: "absolute", left: 46, top: 48, width: `${active <= 1 ? 0 : ((active - 1) / (total - 1)) * 100}%`, maxWidth: "calc(100% - 92px)", height: 5, borderRadius: 8, backgroundColor: accent }} />
+          {Array.from({ length: total }, (_, index) => index + 1).map((number, index) => {
+            const reveal = spring({ fps: 30, frame: localFrame - index * 4, config: { damping: 14, stiffness: 155 } });
+            const isActive = active === number;
+            const isComplete = active > number;
+            return <div key={number} style={{ position: "relative", display: "grid", justifyItems: "center", gap: 22, opacity: reveal, transform: `translateY(${(1 - reveal) * 45}px)` }}><div style={{ width: 98, height: 98, display: "grid", placeItems: "center", borderRadius: 999, border: `3px solid ${isActive || isComplete ? accent : "rgba(255,255,255,.16)"}`, backgroundColor: isActive ? accent : isComplete ? `${accent}24` : "#171a20", color: isActive ? "#070809" : isComplete ? accent : "rgba(255,255,255,.42)", boxShadow: isActive ? `0 0 55px ${accent}66` : "none", transform: `scale(${isActive ? 1 + Math.sin(localFrame * .16) * .04 : 1})` }}>{isComplete ? <Check size={44} strokeWidth={3} /> : <strong style={{ fontSize: 34, fontVariantNumeric: "tabular-nums" }}>{String(number).padStart(2, "0")}</strong>}</div><div style={{ width: 112, height: 9, borderRadius: 12, backgroundColor: isActive ? accent : "rgba(255,255,255,.1)" }} /></div>;
+          })}
+        </div>
+        <div style={{ minHeight: 118, display: "grid", placeItems: "center", marginTop: 62, borderRadius: 28, border: `1px solid ${active ? `${accent}66` : "rgba(255,255,255,.1)"}`, backgroundColor: active ? `${accent}12` : "rgba(255,255,255,.025)", fontSize: 62, lineHeight: .95, fontWeight: 950, letterSpacing: "-.055em", textTransform: "uppercase" }}>{active ? visualPhrase(scene) : "OVERVIEW"}</div>
+      </div>
+    </Stage>
+  );
+};
 
 const RaceVisual = ({ localFrame, currentSeconds, accent, scene }: VisualProps) => {
   const competitors = scene.countries?.length ? scene.countries.slice(0, 4) : ["other" as const];
@@ -494,7 +521,7 @@ const RaceVisual = ({ localFrame, currentSeconds, accent, scene }: VisualProps) 
             <div style={{ color: accent, fontSize: 20, fontWeight: 900, letterSpacing: ".14em", textTransform: "uppercase" }}>Editorial metaphor</div>
             <div style={{ marginTop: 8, fontSize: 58, lineHeight: .92, fontWeight: 950, letterSpacing: "-.06em", textTransform: "uppercase" }}>The AI race</div>
           </div>
-          <div style={{ maxWidth: 310, color: "rgba(255,255,255,.55)", fontSize: 22, lineHeight: 1.2, textAlign: "right" }}>{scene.title}</div>
+          <div style={{ maxWidth: 310, color: "rgba(255,255,255,.55)", fontSize: 22, lineHeight: 1.2, textAlign: "right" }}>{visualPhrase(scene)}</div>
         </div>
         <div style={{ display: "grid", gap: 12 }}>
           {competitors.map((country, index) => {
@@ -526,8 +553,7 @@ const KeywordVisual = ({ localFrame, accent, scene }: VisualProps) => {
     <Stage eyebrow={scene.eyebrow} accent={accent}>
       <div style={{ ...card(accent), position: "absolute", inset: 0, display: "grid", placeItems: "center", textAlign: "center", padding: 60, transform: `scale(${0.8 + scale * 0.2})` }}>
         <Code2 color={accent} size={85} strokeWidth={1.6} />
-        <div style={{ fontSize: 80, lineHeight: 0.95, fontWeight: 950, letterSpacing: "-.06em", textTransform: "uppercase" }}>{scene.title}</div>
-        <div style={{ maxWidth: 650, color: "rgba(255,255,255,.5)", fontSize: 26, lineHeight: 1.3 }}>{scene.detail}</div>
+        <div style={{ fontSize: 80, lineHeight: 0.95, fontWeight: 950, letterSpacing: "-.06em", textTransform: "uppercase" }}>{visualPhrase(scene)}</div>
       </div>
     </Stage>
   );
@@ -603,7 +629,7 @@ export const MotionComposition = ({ videoUrl, transcript, scenes, captionPreset,
         {activeScene ? <VisualStage localFrame={localFrame} currentSeconds={frame / 30} accent={accent} scene={activeScene} /> : null}
       </div>
       <div style={{ position: "absolute", left: 0, top: 1005, right: 0, bottom: 0, backgroundColor: "#13161b" }}>
-        {videoUrl ? <Video src={videoUrl} objectFit={sourceFit} premountFor={30} disallowFallbackToOffthreadVideo volume={soundEnabled ? 1 : 0} style={{ width: "100%", height: "100%", backgroundColor: "#08090b" }} /> : <TalkingHeadPlaceholder accent={accent} frame={frame} />}
+        {videoUrl ? <Video src={videoUrl} objectFit={sourceFit} premountFor={30} delayRenderRetries={0} delayRenderTimeoutInMilliseconds={LOCAL_RENDER_MEDIA_TIMEOUT_MS} volume={soundEnabled ? 1 : 0} style={{ width: "100%", height: "100%", backgroundColor: "#08090b" }} /> : <TalkingHeadPlaceholder accent={accent} frame={frame} />}
       </div>
       <div style={{ position: "absolute", left: 0, right: 0, top: 980, height: 96, backgroundColor: "rgba(7,8,10,.62)" }} />
       <CaptionLayer transcript={transcript} words={words} preset={captionPreset} accent={accent} currentSeconds={frame / 30} durationSeconds={durationInFrames / 30} wordTiming={wordTiming} captionOffset={captionOffset} captionScale={captionScale} />

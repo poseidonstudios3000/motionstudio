@@ -133,3 +133,26 @@ test("gives each spoken AI-race country its own timestamped cue", () => {
   assert.deepEqual(result.scenes[0].countries, ["us", "china", "other"]);
   assert.deepEqual(result.scenes[0].cues?.map((cue) => [cue.entityId, cue.startSeconds]), [["country-us", 2.25], ["country-china", 3.2], ["country-other", 4.25]]);
 });
+
+test("turns German ordered arguments into persistent numbered list states", () => {
+  const result = planStoryboard({
+    transcript: "Drei Argumente. Erstens spart das Modell Zeit. Zweitens sinken die Kosten. Drittens steigt die Qualität.",
+    duration: 16,
+    dopaminePacing: false,
+  });
+  const listScenes = result.scenes.filter((scene) => scene.kind === "list");
+  assert.deepEqual(listScenes.map((scene) => scene.listIndex), [undefined, 1, 2, 3]);
+  assert.equal(listScenes.every((scene) => scene.listTotal === 3), true);
+  assert.equal(listScenes.every((scene) => (scene.keyPhrase?.split(/\s+/).length ?? 0) <= 3), true);
+  assert.equal(listScenes.some((scene) => scene.keyPhrase === scene.detail), false);
+});
+
+test("detects inflected German list ordinals", () => {
+  const result = planStoryboard({
+    transcript: "Der erste Grund ist Tempo. Der zweite Grund ist Qualität. Der dritte Grund ist Kontrolle.",
+    duration: 12,
+    dopaminePacing: false,
+  });
+  assert.deepEqual(result.scenes.map((scene) => scene.listIndex), [1, 2, 3]);
+  assert.equal(result.scenes.every((scene) => scene.listTotal === 3), true);
+});

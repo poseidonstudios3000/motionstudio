@@ -53,7 +53,8 @@ import {
   type TimedWord,
   type VisualKind,
 } from "./motion-composition";
-import { extractSpeechAudio, inspectMedia, MAX_ANALYSIS_SECONDS, normalizeTimedWords } from "./media-analysis";
+import { extractSpeechAudio, inspectMedia, MAX_ANALYSIS_SECONDS, normalizeTimedWords, validateFirstVideoFrame } from "./media-analysis";
+import { friendlyLocalRenderError, LOCAL_RENDER_MEDIA_TIMEOUT_MS } from "./export-settings";
 import { planStoryboard, type DetectedLanguage } from "./storyboard";
 import { alignTranscriptToWordTimings } from "./caption-timing";
 import { TranscriptionComparisonResults, TranscriptionGlossaryInput, TranscriptionLanguagePicker, TranscriptionModelPicker, type TranscriptionRun } from "./transcription-comparison";
@@ -205,6 +206,7 @@ export default function Studio() {
   const fileInput = useRef<HTMLInputElement>(null);
   const playerRef = useRef<PlayerRef>(null);
   const uploadUrl = useRef<string | null>(null);
+  const sourceFile = useRef<File | null>(null);
   const transcriptionWorker = useRef<Worker | null>(null);
   const analysisRequest = useRef(0);
   const analysisAbort = useRef<AbortController | null>(null);
@@ -494,6 +496,7 @@ export default function Studio() {
       adoptedUrl = URL.createObjectURL(file);
       const previousUrl = uploadUrl.current;
       uploadUrl.current = adoptedUrl;
+      sourceFile.current = file;
       setVideoUrl(adoptedUrl);
       setFileName(file.name);
       setSourceMeta({ duration: projectDuration, width: metadata.width, height: metadata.height, size: metadata.size });
@@ -555,6 +558,7 @@ export default function Studio() {
     setCurrentFrame(0);
     const previousUrl = uploadUrl.current;
     uploadUrl.current = null;
+    sourceFile.current = null;
     sourceAudio.current = null;
     setHasSourceAudio(false);
     setVideoUrl(null);
@@ -617,12 +621,22 @@ export default function Studio() {
       return;
     }
     const controller = new AbortController();
+    let renderSourceUrl: string | null = null;
     renderAbort.current = controller;
     setRenderStatus("checking");
     setRenderProgress(0);
     setRenderMessage("Checking browser encoder…");
     try {
       const { canRenderMediaOnWeb, renderMediaOnWeb } = await import("@remotion/web-renderer");
+      if (sourceFile.current) {
+        setRenderMessage("Checking the first source frame...");
+        await validateFirstVideoFrame(sourceFile.current);
+        renderSourceUrl = URL.createObjectURL(sourceFile.current);
+      }
+      const renderProps: MotionCompositionProps = {
+        ...compositionProps,
+        videoUrl: renderSourceUrl ?? compositionProps.videoUrl,
+      };
       const muted = !videoUrl || !soundEnabled;
       const outputWidth = resolution;
       const outputHeight = Math.round((resolution * 16) / 9);
@@ -631,8 +645,8 @@ export default function Studio() {
       setRenderStatus("rendering");
       setRenderMessage("Rendering frames locally — keep this tab open");
       const result = await renderMediaOnWeb({
-        composition: { id: "motn-talking-head", component: MotionComposition, durationInFrames, fps: FPS, width: 1080, height: 1920, defaultProps: compositionProps },
-        inputProps: compositionProps,
+        composition: { id: "motn-talking-head", component: MotionComposition, durationInFrames, fps: FPS, width: 1080, height: 1920, defaultProps: renderProps },
+        inputProps: renderProps,
         container: "mp4",
         videoCodec: support.resolvedVideoCodec,
         audioCodec: muted ? null : support.resolvedAudioCodec,
@@ -647,6 +661,7 @@ export default function Studio() {
         scale: resolution / 1080,
         licenseKey: "free-license",
         isProduction: true,
+        delayRenderTimeoutInMilliseconds: LOCAL_RENDER_MEDIA_TIMEOUT_MS,
         signal: controller.signal,
         onProgress: ({ progress }) => setRenderProgress(Math.max(1, Math.round(progress * 100))),
       });
@@ -669,9 +684,10 @@ export default function Studio() {
       } else {
         setRenderStatus("error");
         const rawMessage = error instanceof Error ? error.message : "Local MP4 rendering failed.";
-        setRenderMessage(/decode|codec|media source/i.test(rawMessage) ? "The uploaded codec cannot be decoded for export. Normalize it to H.264/AAC and try again." : rawMessage);
+        setRenderMessage(friendlyLocalRenderError(rawMessage));
       }
     } finally {
+      if (renderSourceUrl) URL.revokeObjectURL(renderSourceUrl);
       if (renderAbort.current === controller) renderAbort.current = null;
     }
   };
