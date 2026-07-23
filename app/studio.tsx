@@ -14,7 +14,6 @@ import {
   Clapperboard,
   CloudUpload,
   Code2,
-  Download,
   Film,
   FolderOpen,
   Gauge,
@@ -34,7 +33,6 @@ import {
   Plus,
   RefreshCcw,
   Scissors,
-  Settings2,
   Sparkles,
   Upload,
   WandSparkles,
@@ -43,6 +41,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
+import packageJson from "../package.json";
 import {
   MotionComposition,
   type CaptionPreset,
@@ -71,6 +70,21 @@ import {
 } from "./transcription";
 
 const FPS = 30;
+const APP_VERSION = packageJson.version;
+type MaterialPreset = "graphite" | "silver" | "chrome" | "titanium";
+type FontPreset = "geist" | "swiss" | "humanist" | "technical";
+const MATERIAL_PRESETS: readonly { id: MaterialPreset; label: string; shortLabel: string }[] = [
+  { id: "graphite", label: "Graphite", shortLabel: "G" },
+  { id: "silver", label: "Silver", shortLabel: "S" },
+  { id: "chrome", label: "Chrome", shortLabel: "C" },
+  { id: "titanium", label: "Titanium", shortLabel: "T" },
+];
+const FONT_PRESETS: readonly { id: FontPreset; label: string; shortLabel: string }[] = [
+  { id: "geist", label: "Geist", shortLabel: "G" },
+  { id: "swiss", label: "Swiss", shortLabel: "H" },
+  { id: "humanist", label: "Humanist", shortLabel: "A" },
+  { id: "technical", label: "Technical", shortLabel: "01" },
+];
 const demoTranscript =
   "Stop building games with ChatGPT. Claude Code ships a playable game in one shot. GLM 5.2 wins in wild mechanics. Gemini eats your whole codebase and assets in one prompt. So which one is your default? Comment down below.";
 
@@ -215,6 +229,8 @@ export default function Studio() {
   const [wordTiming, setWordTiming] = useState(true);
   const [dopaminePacing, setDopaminePacing] = useState(true);
   const [sourceFit, setSourceFit] = useState<"cover" | "contain">("cover");
+  const [materialPreset, setMaterialPreset] = useState<MaterialPreset>("chrome");
+  const [fontPreset, setFontPreset] = useState<FontPreset>("geist");
   const [dropActive, setDropActive] = useState(false);
   const [selectedTranscriptionModels, setSelectedTranscriptionModels] = useState<TranscriptionModelId[]>([...DEFAULT_TRANSCRIPTION_MODEL_IDS]);
   const [selectedSpeechLanguage, setSelectedSpeechLanguage] = useState<SpeechLanguage>("auto");
@@ -646,14 +662,16 @@ export default function Studio() {
   const cancelRender = () => renderAbort.current?.abort();
 
   return (
-    <main className="studio-shell">
+    <main className="studio-shell" data-material={materialPreset} data-font={fontPreset}>
       <header className="topbar">
-        <div className="brand-lockup" aria-label="MOTN Studio"><span className="brand-mark"><img src="/motion-studio-logo.png" alt="" /></span><span className="brand-name">MOTN</span><span className="brand-product">Studio</span></div>
-        <div className="project-heading"><span className="project-status-dot" /><div><strong>{fileName}</strong><span>Local draft · private on this device</span></div><ChevronDown size={15} /></div>
+        <div className="topbar-brand-zone">
+          <div className="brand-lockup" aria-label={`MOTION Studio version ${APP_VERSION} alpha`}><span className="brand-mark"><img src="/motion-studio-logo.png" alt="" /></span><span className="brand-name">MOTION</span><span className="brand-product">Studio</span><span className="brand-version">v{APP_VERSION} alpha</span></div>
+          <button className="ghost-button new-video-button" type="button" onClick={() => setShowImport(true)} disabled={processing || renderStatus === "checking" || renderStatus === "rendering"}><Plus size={16} /> New video</button>
+        </div>
+        <div className="project-heading"><span className={`project-status-dot ${needsTranscript || storyboardDirty ? "warning" : "success"}`} /><div><strong>{fileName}</strong><span>Local draft · private on this device</span></div><ChevronDown size={15} /></div>
         <div className="topbar-actions">
-          <button className="icon-button desktop-only" type="button" aria-label="Project settings" onClick={() => setActivePanel("brand")}><Settings2 size={18} /></button>
-          <button className="ghost-button desktop-only" type="button" onClick={() => setShowImport(true)} disabled={processing || renderStatus === "checking" || renderStatus === "rendering"}><Plus size={17} /> New video</button>
-          <button className="export-button" type="button" onClick={exportMp4} disabled={processing || renderStatus === "checking" || renderStatus === "rendering"}>{renderStatus === "checking" || renderStatus === "rendering" ? <LoaderCircle className="spin" size={17} /> : <ArrowDownToLine size={17} />}Export MP4</button>
+          <div className="ui-preset-control" aria-label="Material theme"><span>Material</span><div>{MATERIAL_PRESETS.map((preset) => <button type="button" key={preset.id} className={materialPreset === preset.id ? "active" : ""} aria-pressed={materialPreset === preset.id} title={preset.label} onClick={() => setMaterialPreset(preset.id)}>{preset.shortLabel}</button>)}</div></div>
+          <div className="ui-preset-control font-preset-control" aria-label="Font set"><span>Type</span><div>{FONT_PRESETS.map((preset) => <button type="button" key={preset.id} className={fontPreset === preset.id ? "active" : ""} aria-pressed={fontPreset === preset.id} title={preset.label} onClick={() => setFontPreset(preset.id)}>{preset.shortLabel}</button>)}</div></div>
         </div>
       </header>
 
@@ -666,16 +684,15 @@ export default function Studio() {
               { n: "02", label: "Transcript", meta: needsTranscript ? "Needs review" : `${languageName[language]} · ${transcript.trim().split(/\s+/).filter(Boolean).length} words`, icon: Languages },
               { n: "03", label: "AI Storyboard", meta: `${scenes.length} visual beats`, icon: WandSparkles },
               { n: "04", label: "Style", meta: `${captionPreset} · ${motionStyle}`, icon: Palette },
-              { n: "05", label: "Export", meta: `9:16 · ${resolution}p`, icon: Download },
             ].map((item, index) => {
               const Icon = item.icon;
-              const active = showImport ? index === 0 : renderStatus === "checking" || renderStatus === "rendering" ? index === 4 : activePanel === "captions" ? index === 1 : activePanel === "scenes" ? index === 2 : index === 3;
+              const active = showImport ? index === 0 : activePanel === "captions" ? index === 1 : activePanel === "scenes" ? index === 2 : index === 3;
               const complete = index === 0 || (index > 0 && index < 4 && !needsTranscript && !storyboardDirty);
-              return <button type="button" className={`workflow-step ${active ? "active" : ""}`} key={item.n} onClick={() => { if (index === 0) setShowImport(true); if (index === 1) setActivePanel("captions"); if (index === 2) setActivePanel("scenes"); if (index === 3) setActivePanel("brand"); if (index === 4) void exportMp4(); }} disabled={processing}><span className="step-number">{item.n}</span><span className="step-icon"><Icon size={16} /></span><span className="step-copy"><strong>{item.label}</strong><small>{item.meta}</small></span>{complete ? <Check className="step-check" size={14} /> : null}</button>;
+              return <button type="button" className={`workflow-step ${active ? "active" : ""}`} key={item.n} onClick={() => { if (index === 0) setShowImport(true); if (index === 1) setActivePanel("captions"); if (index === 2) setActivePanel("scenes"); if (index === 3) setActivePanel("brand"); }} disabled={processing}><span className="step-number">{item.n}</span><span className="step-icon"><Icon size={16} /></span><span className="step-copy"><strong>{item.label}</strong><small>{item.meta}</small></span>{complete ? <Check className="step-check" size={14} /> : null}</button>;
             })}
           </div>
           <div className="source-card"><div className="source-preview"><Film size={23} /><span>9:16</span></div><div className="source-copy"><strong>{fileName}</strong><span>{formatTime(sourceMeta.duration)} · {formatBytes(sourceMeta.size)}</span></div><button type="button" aria-label="Replace source" onClick={() => setShowImport(true)} disabled={processing || renderStatus === "checking" || renderStatus === "rendering"}><RefreshCcw size={14} /></button></div>
-          <div className="director-card"><span className="director-icon"><Sparkles size={15} /></span><div><strong>Local AI Director</strong><p>{dopaminePacing ? "Meaning first. A grounded visual change every 2–3 seconds." : "A calmer sequence with longer visual holds."}</p></div></div>
+          <div className="director-card"><span className="director-icon"><img src="/motion-studio-logo.png" alt="" /></span><div><strong>Local AI Director</strong><p>{dopaminePacing ? "Meaning first. A grounded visual change every 2–3 seconds." : "A calmer sequence with longer visual holds."}</p></div></div>
         </aside>
 
         <aside className={"transcript-panel " + (activePanel === "captions" ? "active-panel" : "")} aria-label="Transcript and captions editor">
@@ -726,6 +743,10 @@ export default function Studio() {
             <div className="control-section"><div className="control-label"><span>Export size</span><small>MP4 · H.264</small></div><div className="resolution-row"><button type="button" className={resolution === 720 ? "active" : ""} onClick={() => setResolution(720)} aria-pressed={resolution === 720}><strong>720p</strong><small>Fast preview</small></button><button type="button" className={resolution === 1080 ? "active" : ""} onClick={() => setResolution(1080)} aria-pressed={resolution === 1080}><strong>1080p</strong><small>High quality</small></button></div></div>
             <div className="toggle-row"><div><Volume2 size={17} /><span><strong>Source audio</strong><small>Keep talking head voice</small></span></div><button className={`switch ${soundEnabled ? "on" : ""}`} role="switch" aria-checked={soundEnabled} aria-label="Keep source audio" type="button" onClick={() => setSoundEnabled((value) => !value)}><span /></button></div>
             <div className="toggle-row"><div><Zap size={17} /><span><strong>Dopamine pacing</strong><small>{dopaminePacing ? "Visual beat every 2–3 sec" : "Longer, calmer visual holds"}</small></span></div><button className={`switch ${dopaminePacing ? "on" : ""}`} role="switch" aria-checked={dopaminePacing} aria-label="Use fast dopamine pacing" type="button" onClick={() => { const next = !dopaminePacing; setDopaminePacing(next); if (transcript.trim() && !storyboardDirty) redirectScenes(next); }}><span /></button></div>
+          </div>
+          <div className="inspector-export">
+            <div><span className={`export-status ${renderStatus}`} /> <span>{renderStatus === "rendering" ? `Rendering ${renderProgress}%` : renderStatus === "complete" ? "Export ready" : renderStatus === "error" ? "Export needs attention" : `9:16 · ${resolution}p MP4`}</span></div>
+            <button className="export-button" type="button" onClick={exportMp4} disabled={processing || renderStatus === "checking" || renderStatus === "rendering"}>{renderStatus === "checking" || renderStatus === "rendering" ? <LoaderCircle className="spin" size={17} /> : <ArrowDownToLine size={17} />}Export MP4</button>
           </div>
         </aside>
       </div>
