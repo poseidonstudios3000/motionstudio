@@ -54,15 +54,17 @@ import {
 } from "./motion-composition";
 import { extractSpeechAudio, inspectMedia, MAX_ANALYSIS_SECONDS, normalizeTimedWords } from "./media-analysis";
 import { planStoryboard, type DetectedLanguage } from "./storyboard";
-import { TranscriptionComparisonResults, TranscriptionModelPicker, type TranscriptionRun } from "./transcription-comparison";
+import { TranscriptionComparisonResults, TranscriptionLanguagePicker, TranscriptionModelPicker, type TranscriptionRun } from "./transcription-comparison";
 import {
   DEFAULT_TRANSCRIPTION_MODEL_IDS,
   encodePcm16Wav,
   getTranscriptionModel,
   isGroqTranscriptionModel,
   isLocalTranscriptionModel,
+  SPEECH_LANGUAGE_OPTIONS,
   type GroqTranscriptionModelId,
   type LocalTranscriptionModelId,
+  type SpeechLanguage,
   type TranscriptionModelId,
 } from "./transcription";
 
@@ -126,9 +128,10 @@ type GroqTranscriptionPayload = {
   words: TimedWord[];
 };
 
-const transcribeWithGroq = async (audio: Float32Array, modelId: GroqTranscriptionModelId, signal: AbortSignal): Promise<GroqTranscriptionPayload> => {
+const transcribeWithGroq = async (audio: Float32Array, modelId: GroqTranscriptionModelId, language: SpeechLanguage, signal: AbortSignal): Promise<GroqTranscriptionPayload> => {
   const formData = new FormData();
   formData.append("model", modelId);
+  formData.append("language", language);
   formData.append("audio", encodePcm16Wav(audio), "motion-studio-audio.wav");
   const response = await fetch("/api/transcription/groq", { method: "POST", body: formData, signal });
   const payload: unknown = await response.json().catch(() => null);
@@ -195,6 +198,8 @@ export default function Studio() {
   const [sourceFit, setSourceFit] = useState<"cover" | "contain">("cover");
   const [dropActive, setDropActive] = useState(false);
   const [selectedTranscriptionModels, setSelectedTranscriptionModels] = useState<TranscriptionModelId[]>([...DEFAULT_TRANSCRIPTION_MODEL_IDS]);
+  const [selectedSpeechLanguage, setSelectedSpeechLanguage] = useState<SpeechLanguage>("auto");
+  const [lastTranscriptionLanguage, setLastTranscriptionLanguage] = useState<SpeechLanguage>("auto");
   const [transcriptionRuns, setTranscriptionRuns] = useState<TranscriptionRun[]>([]);
   const [appliedTranscriptionModel, setAppliedTranscriptionModel] = useState<TranscriptionModelId | null>(null);
   const [hasSourceAudio, setHasSourceAudio] = useState(false);
@@ -205,6 +210,7 @@ export default function Studio() {
   const playingSceneId = scenes.find((scene) => currentProgress >= scene.start && currentProgress < scene.end)?.id ?? scenes.at(-1)?.id;
   const usesGroqTranscription = selectedTranscriptionModels.some(isGroqTranscriptionModel);
   const appliedModel = appliedTranscriptionModel ? getTranscriptionModel(appliedTranscriptionModel) : null;
+  const comparisonLanguageLabel = SPEECH_LANGUAGE_OPTIONS.find((option) => option.id === lastTranscriptionLanguage)?.label ?? "Auto detect";
   const compositionProps = useMemo<MotionCompositionProps>(() => ({ videoUrl, transcript, words, scenes, captionPreset, motionStyle, accent, projectName: "MOTN / 001", durationInFrames, soundEnabled, wordTiming, sourceFit }), [videoUrl, transcript, words, scenes, captionPreset, motionStyle, accent, durationInFrames, soundEnabled, wordTiming, sourceFit]);
 
   useEffect(() => () => {
@@ -252,7 +258,7 @@ export default function Studio() {
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [showComparison, showImport, processing]);
 
-  const transcribeAudio = useCallback((audio: Float32Array, requestId: number, signal: AbortSignal, modelId: LocalTranscriptionModelId) => new Promise<{ text: string; words: TimedWord[] }>((resolve, reject) => {
+  const transcribeAudio = useCallback((audio: Float32Array, requestId: number, signal: AbortSignal, modelId: LocalTranscriptionModelId, languageHint: SpeechLanguage) => new Promise<{ text: string; words: TimedWord[] }>((resolve, reject) => {
     const worker = transcriptionWorker.current ?? new Worker(new URL("./transcription-worker.ts", import.meta.url), { type: "module" });
     transcriptionWorker.current = worker;
     let settled = false;
@@ -313,7 +319,7 @@ export default function Studio() {
       onAbort();
       return;
     }
-    worker.postMessage({ type: "transcribe", requestId, audio, modelId }, [audio.buffer]);
+    worker.postMessage({ type: "transcribe", requestId, audio, modelId, language: languageHint }, [audio.buffer]);
   }), []);
 
   const toggleTranscriptionModel = (modelId: TranscriptionModelId) => {
@@ -359,18 +365,19 @@ export default function Studio() {
 
     setTranscriptionRuns([]);
     setAppliedTranscriptionModel(null);
+    setLastTranscriptionLanguage(selectedSpeechLanguage);
     const groqModels = selectedTranscriptionModels.filter(isGroqTranscriptionModel);
     const localModels = selectedTranscriptionModels.filter(isLocalTranscriptionModel);
     const groqTask = Promise.all(groqModels.map((modelId) => {
       setAnalysisStage(`Sending normalized audio to ${getTranscriptionModel(modelId).shortLabel}`);
-      return capture(modelId, () => transcribeWithGroq(audio, modelId, signal));
+      return capture(modelId, () => transcribeWithGroq(audio, modelId, selectedSpeechLanguage, signal));
     }));
     const localTask = (async () => {
       const localRuns: TranscriptionRun[] = [];
       for (const [index, modelId] of localModels.entries()) {
         if (signal.aborted) throw new DOMException("Transcription cancelled", "AbortError");
         setAnalysisStage(`Running ${getTranscriptionModel(modelId).label} on this device`);
-        const run = await capture(modelId, () => transcribeAudio(new Float32Array(audio), requestId * 10 + index + 1, signal, modelId));
+        const run = await capture(modelId, () => transcribeAudio(new Float32Array(audio), requestId * 10 + index + 1, signal, modelId, selectedSpeechLanguage));
         localRuns.push(run);
         if (index < localModels.length - 1) {
           transcriptionWorker.current?.terminate();
@@ -388,7 +395,7 @@ export default function Studio() {
     applyTranscription(preferred, duration);
     setShowComparison(true);
     return preferred;
-  }, [applyTranscription, selectedTranscriptionModels, transcribeAudio]);
+  }, [applyTranscription, selectedSpeechLanguage, selectedTranscriptionModels, transcribeAudio]);
 
   const rerunTranscriptionComparison = async () => {
     if (!sourceAudio.current || processing) return;
@@ -657,11 +664,11 @@ export default function Studio() {
           <div className="panel-titlebar"><span><Captions size={15} /> Transcript</span><small>{transcript.trim().split(/\s+/).filter(Boolean).length} words</small></div>
           <div className="panel-content transcript-content">
             <div className="section-heading"><div><span>Captions</span><strong>{languageName[language]} transcript</strong></div><span className="confidence"><BadgeCheck size={13} /> {words.length ? "Word timed" : "Estimated"}</span></div>
-            <div className="speech-model-row"><span><AudioLines size={15} /><span><strong>{appliedModel?.label ?? "Transcription benchmark"}</strong><small>{appliedModel ? `${appliedModel.provider === "groq" ? "Groq cloud" : "On device"} · ${appliedModel.wordTimestamps ? "word timed" : "text only"}` : "Choose models below"}</small></span></span><em>{appliedModel ? "Applied" : `${selectedTranscriptionModels.length} selected`}</em></div>
+            <div className="speech-model-row"><span><AudioLines size={15} /><span><strong>{appliedModel?.label ?? "Transcription benchmark"}</strong><small>{appliedModel ? `${appliedModel.provider === "groq" ? "Groq cloud" : "On device"} · ${appliedModel.wordTimestamps ? "word timed" : "text only"}` : "Choose models below"}</small></span></span><em>{appliedModel ? "Selected" : `${selectedTranscriptionModels.length} selected`}</em></div>
             {transcriptionRuns.length ? <button className="comparison-open" type="button" onClick={() => setShowComparison(true)}><Layers3 size={14} /> Open full transcript comparison</button> : null}
+            <TranscriptionLanguagePicker value={selectedSpeechLanguage} disabled={processing} onChange={setSelectedSpeechLanguage} />
             <TranscriptionModelPicker selected={selectedTranscriptionModels} disabled={processing} onToggle={toggleTranscriptionModel} />
             {hasSourceAudio ? <button className="secondary-action rerun-models" type="button" onClick={() => void rerunTranscriptionComparison()} disabled={processing}><RefreshCcw size={14} /> Run selected models on current audio</button> : null}
-            <TranscriptionComparisonResults runs={transcriptionRuns} appliedModelId={appliedTranscriptionModel} onApply={(run) => applyTranscription(run, sourceMeta.duration)} />
             {needsTranscript ? <div className="prototype-note"><Sparkles size={16} /><p>Local transcription could not finish for this source. Paste the transcript here; the context director will still build a custom storyboard.</p></div> : null}
             {storyboardDirty && transcript.trim() ? <div className="stale-note"><RefreshCcw size={14} /> Transcript changed - regenerate scenes before export.</div> : null}
             <label className="transcript-editor-label" htmlFor="transcript-editor"><span>Spoken text</span><small>Edit mistakes directly. Timing becomes estimated after a manual edit.</small></label>
@@ -718,6 +725,7 @@ export default function Studio() {
             <h2 id="import-title">Compare the words. Direct the meaning.</h2>
             <p>Select one model for a fast run or several to benchmark the same English, German, or Russian clip.</p>
             {uploadError ? <div className="modal-error" role="alert"><AlertTriangle size={16} />{uploadError}</div> : null}
+            <TranscriptionLanguagePicker value={selectedSpeechLanguage} disabled={processing} onChange={setSelectedSpeechLanguage} />
             <TranscriptionModelPicker selected={selectedTranscriptionModels} disabled={processing} onToggle={toggleTranscriptionModel} />
             <button className={`dropzone ${dropActive ? "active" : ""}`} type="button" onClick={() => fileInput.current?.click()} onDragEnter={(event) => { event.preventDefault(); setDropActive(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDropActive(false)} onDrop={handleDrop} disabled={processing}>
               <span>{processing ? <LoaderCircle className="spin" size={26} /> : <Upload size={26} />}</span>
@@ -739,7 +747,7 @@ export default function Studio() {
             <button className="modal-close" type="button" onClick={() => setShowComparison(false)} aria-label="Close transcript comparison"><X size={18} /></button>
             <span className="modal-kicker"><Layers3 size={14} /> Transcription benchmark</span>
             <h2 id="comparison-title">Compare every transcript.</h2>
-            <p>Review wording, missing phrases, timing, and processing speed. Choose the transcript that best matches what was actually said.</p>
+            <p>Language hint used: <strong>{comparisonLanguageLabel}</strong>. Review wording, missing phrases, timing, and processing speed, then select the transcript that matches what was actually said.</p>
             <TranscriptionComparisonResults
               runs={transcriptionRuns}
               appliedModelId={appliedTranscriptionModel}

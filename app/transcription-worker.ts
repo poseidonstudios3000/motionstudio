@@ -1,13 +1,14 @@
 /// <reference lib="webworker" />
 
 import { env, pipeline } from "@huggingface/transformers";
-import { getTranscriptionOptions, type LocalTranscriptionModelId } from "./transcription";
+import { getTranscriptionOptions, type LocalTranscriptionModelId, type SpeechLanguage } from "./transcription";
 
 type TranscriptionRequest = {
   type: "transcribe";
   requestId: number;
   audio: Float32Array;
   modelId: LocalTranscriptionModelId;
+  language: SpeechLanguage;
 };
 
 type PipelineResult = {
@@ -39,13 +40,13 @@ const getTranscriber = (modelId: LocalTranscriptionModelId) => {
 
 self.addEventListener("message", async (event: MessageEvent<TranscriptionRequest>) => {
   if (event.data.type !== "transcribe") return;
-  const { requestId, audio, modelId } = event.data;
+  const { requestId, audio, modelId, language } = event.data;
   try {
     const modelLabel = modelId.endsWith("small") ? "Whisper Small" : "Whisper Tiny";
     self.postMessage({ type: "status", requestId, message: `Loading ${modelLabel}` });
     const transcriber = await getTranscriber(modelId);
     self.postMessage({ type: "status", requestId, message: `Transcribing locally with ${modelLabel}` });
-    const result = (await transcriber(audio, getTranscriptionOptions("auto"))) as PipelineResult;
+    const result = (await transcriber(audio, getTranscriptionOptions(language))) as PipelineResult;
     self.postMessage({ type: "result", requestId, text: result.text?.trim() ?? "", chunks: result.chunks ?? [] });
   } catch (error) {
     self.postMessage({ type: "error", requestId, message: error instanceof Error ? error.message : "Local transcription failed." });

@@ -4,9 +4,11 @@ import {
   DEFAULT_LOCAL_SPEECH_MODEL_ID,
   DEFAULT_TRANSCRIPTION_MODEL_IDS,
   encodePcm16Wav,
+  getGroqLanguageCode,
   getTranscriptionOptions,
   isGroqTranscriptionModel,
   isLocalTranscriptionModel,
+  isSpeechLanguage,
   TRANSCRIPTION_MODELS,
 } from "../app/transcription";
 
@@ -18,6 +20,11 @@ test("keeps the browser worker and model catalog on the same default", () => {
 test("supports automatic and explicit multilingual transcription options", () => {
   assert.equal("language" in getTranscriptionOptions("auto"), false);
   assert.equal(getTranscriptionOptions("russian").language, "russian");
+  assert.equal(getTranscriptionOptions("german").language, "german");
+  assert.equal(getGroqLanguageCode("german"), "de");
+  assert.equal(getGroqLanguageCode("auto"), null);
+  assert.equal(isSpeechLanguage("german"), true);
+  assert.equal(isSpeechLanguage("klingon"), false);
 });
 
 test("offers local and Groq models with a useful default comparison", () => {

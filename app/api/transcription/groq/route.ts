@@ -1,4 +1,4 @@
-import { isGroqTranscriptionModel } from "../../../transcription";
+import { getGroqLanguageCode, isGroqTranscriptionModel, isSpeechLanguage } from "../../../transcription";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,6 +29,7 @@ export const GET = () =>
     {
       configured: Boolean(process.env.GROQ_API_KEY),
       models: ["whisper-large-v3-turbo", "whisper-large-v3"],
+      languages: ["auto", "english", "german", "russian", "spanish", "french"],
     },
     { headers: { "cache-control": "no-store" } },
   );
@@ -45,8 +46,11 @@ export const POST = async (request: Request) => {
   }
 
   const model = input.get("model");
+  const requestedLanguage = input.get("language");
   const audio = input.get("audio");
   if (typeof model !== "string" || !isGroqTranscriptionModel(model)) return errorResponse("Choose a supported Groq transcription model.", 400);
+  const language = typeof requestedLanguage === "string" ? requestedLanguage : "auto";
+  if (!isSpeechLanguage(language)) return errorResponse("Choose a supported transcription language.", 400);
   if (!(audio instanceof File)) return errorResponse("An extracted WAV audio file is required.", 400);
   if (!audio.size) return errorResponse("The extracted audio file is empty.", 400);
   if (audio.size > MAX_AUDIO_BYTES) return errorResponse("The extracted audio exceeds the 90-second analysis limit.", 413);
@@ -60,6 +64,8 @@ export const POST = async (request: Request) => {
   providerInput.append("response_format", "verbose_json");
   providerInput.append("timestamp_granularities[]", "word");
   providerInput.append("temperature", "0");
+  const groqLanguage = getGroqLanguageCode(language);
+  if (groqLanguage) providerInput.append("language", groqLanguage);
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 90_000);

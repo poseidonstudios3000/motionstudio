@@ -1,4 +1,25 @@
 export type SpeechLanguage = "auto" | "english" | "german" | "russian" | "spanish" | "french";
+export const SPEECH_LANGUAGE_OPTIONS: readonly { id: SpeechLanguage; label: string; shortLabel: string }[] = [
+  { id: "auto", label: "Auto detect", shortLabel: "Auto" },
+  { id: "english", label: "English", shortLabel: "EN" },
+  { id: "german", label: "German / Deutsch", shortLabel: "DE" },
+  { id: "russian", label: "Russian / Русский", shortLabel: "RU" },
+  { id: "spanish", label: "Spanish / Español", shortLabel: "ES" },
+  { id: "french", label: "French / Français", shortLabel: "FR" },
+];
+
+const groqLanguageCodes: Record<Exclude<SpeechLanguage, "auto">, string> = {
+  english: "en",
+  german: "de",
+  russian: "ru",
+  spanish: "es",
+  french: "fr",
+};
+
+export const isSpeechLanguage = (value: string): value is SpeechLanguage =>
+  SPEECH_LANGUAGE_OPTIONS.some((language) => language.id === value);
+
+export const getGroqLanguageCode = (language: SpeechLanguage) => language === "auto" ? null : groqLanguageCodes[language];
 export type LocalTranscriptionModelId = "Xenova/whisper-tiny" | "Xenova/whisper-small";
 export type GroqTranscriptionModelId = "whisper-large-v3-turbo" | "whisper-large-v3";
 export type TranscriptionModelId = LocalTranscriptionModelId | GroqTranscriptionModelId;

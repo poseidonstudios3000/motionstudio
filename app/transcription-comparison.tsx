@@ -2,7 +2,13 @@
 
 import { Check, Clock3, Cloud, HardDrive, type LucideIcon } from "lucide-react";
 import type { TimedWord } from "./motion-composition";
-import { getTranscriptionModel, TRANSCRIPTION_MODELS, type TranscriptionModelId } from "./transcription";
+import {
+  getTranscriptionModel,
+  SPEECH_LANGUAGE_OPTIONS,
+  TRANSCRIPTION_MODELS,
+  type SpeechLanguage,
+  type TranscriptionModelId,
+} from "./transcription";
 
 export type TranscriptionRun = {
   modelId: TranscriptionModelId;
@@ -21,6 +27,36 @@ const ProviderIcon = ({ provider }: { provider: "local" | "groq" }) => {
   const Icon: LucideIcon = provider === "groq" ? Cloud : HardDrive;
   return <Icon size={15} />;
 };
+
+export const TranscriptionLanguagePicker = ({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: SpeechLanguage;
+  disabled: boolean;
+  onChange: (language: SpeechLanguage) => void;
+}) => (
+  <div className="language-picker" aria-label="Speech language">
+    <div className="model-picker-heading"><span>Speech language</span><small>{value === "auto" ? "Detect automatically" : "Forced for all models"}</small></div>
+    <div className="language-picker-row">
+      {SPEECH_LANGUAGE_OPTIONS.map((language) => (
+        <button
+          className={language.id === value ? "active" : ""}
+          type="button"
+          aria-pressed={language.id === value}
+          title={language.label}
+          disabled={disabled}
+          key={language.id}
+          onClick={() => onChange(language.id)}
+        >
+          {language.shortLabel}
+        </button>
+      ))}
+    </div>
+    {value === "german" ? <p className="language-hint">Deutsch is sent explicitly as <strong>de</strong> to Groq and as <strong>German</strong> to local Whisper.</p> : null}
+  </div>
+);
 
 export const TranscriptionModelPicker = ({
   selected,
@@ -80,7 +116,7 @@ export const TranscriptionComparisonResults = ({
               {run.status === "success" ? (
                 <>
                   <p>{run.text}</p>
-                  <footer><span>{run.text.split(/\s+/).filter(Boolean).length} words · {run.words.length ? "word timed" : "segment timed"}</span><button type="button" onClick={() => onApply(run)} disabled={applied}>{applied ? <><Check size={12} /> Applied</> : "Use transcript"}</button></footer>
+                  <footer><span>{run.text.split(/\s+/).filter(Boolean).length} words · {run.words.length ? "word timed" : "segment timed"}</span><button type="button" onClick={() => onApply(run)} disabled={applied}>{applied ? <><Check size={12} /> Selected</> : "Select transcript"}</button></footer>
                 </>
               ) : <p className="comparison-error">{run.error ?? "This model could not transcribe the clip."}</p>}
             </article>
