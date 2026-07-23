@@ -175,6 +175,7 @@ export default function Studio() {
   const [activePanel, setActivePanel] = useState<Panel>("scenes");
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [showImport, setShowImport] = useState(false);
+  const [showComparison, setShowComparison] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [analysisStage, setAnalysisStage] = useState("Preparing media");
   const [analysisProgress, setAnalysisProgress] = useState(0);
@@ -241,13 +242,15 @@ export default function Studio() {
   }, [videoUrl, durationInFrames]);
 
   useEffect(() => {
-    if (!showImport) return;
+    if (!showImport && !showComparison) return;
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !processing) setShowImport(false);
+      if (event.key !== "Escape" || processing) return;
+      if (showComparison) setShowComparison(false);
+      else setShowImport(false);
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [showImport, processing]);
+  }, [showComparison, showImport, processing]);
 
   const transcribeAudio = useCallback((audio: Float32Array, requestId: number, signal: AbortSignal, modelId: LocalTranscriptionModelId) => new Promise<{ text: string; words: TimedWord[] }>((resolve, reject) => {
     const worker = transcriptionWorker.current ?? new Worker(new URL("./transcription-worker.ts", import.meta.url), { type: "module" });
@@ -383,6 +386,7 @@ export default function Studio() {
     const priority: readonly TranscriptionModelId[] = ["whisper-large-v3", "whisper-large-v3-turbo", "Xenova/whisper-small", "Xenova/whisper-tiny"];
     const preferred = [...successful].sort((left, right) => priority.indexOf(left.modelId) - priority.indexOf(right.modelId))[0];
     applyTranscription(preferred, duration);
+    setShowComparison(true);
     return preferred;
   }, [applyTranscription, selectedTranscriptionModels, transcribeAudio]);
 
@@ -442,6 +446,7 @@ export default function Studio() {
       setHasSourceAudio(false);
       setTranscriptionRuns([]);
       setAppliedTranscriptionModel(null);
+      setShowComparison(false);
       setNeedsTranscript(true);
       setStoryboardDirty(true);
       const placeholder: SceneSpec = { id: "uploaded-placeholder", start: 0, end: 1, kind: "keyword", eyebrow: "Source ready", title: "Comparing your transcript", detail: `${selectedTranscriptionModels.length} speech model${selectedTranscriptionModels.length === 1 ? " is" : "s are"} analyzing the first ${Math.round(projectDuration)} seconds.` };
@@ -503,6 +508,7 @@ export default function Studio() {
     setWords([]);
     setTranscriptionRuns([]);
     setAppliedTranscriptionModel(null);
+    setShowComparison(false);
     setScenes(demoScenes);
     setSelectedSceneId(demoScenes[0].id);
     setNeedsTranscript(false);
@@ -652,6 +658,7 @@ export default function Studio() {
           <div className="panel-content transcript-content">
             <div className="section-heading"><div><span>Captions</span><strong>{languageName[language]} transcript</strong></div><span className="confidence"><BadgeCheck size={13} /> {words.length ? "Word timed" : "Estimated"}</span></div>
             <div className="speech-model-row"><span><AudioLines size={15} /><span><strong>{appliedModel?.label ?? "Transcription benchmark"}</strong><small>{appliedModel ? `${appliedModel.provider === "groq" ? "Groq cloud" : "On device"} · ${appliedModel.wordTimestamps ? "word timed" : "text only"}` : "Choose models below"}</small></span></span><em>{appliedModel ? "Applied" : `${selectedTranscriptionModels.length} selected`}</em></div>
+            {transcriptionRuns.length ? <button className="comparison-open" type="button" onClick={() => setShowComparison(true)}><Layers3 size={14} /> Open full transcript comparison</button> : null}
             <TranscriptionModelPicker selected={selectedTranscriptionModels} disabled={processing} onToggle={toggleTranscriptionModel} />
             {hasSourceAudio ? <button className="secondary-action rerun-models" type="button" onClick={() => void rerunTranscriptionComparison()} disabled={processing}><RefreshCcw size={14} /> Run selected models on current audio</button> : null}
             <TranscriptionComparisonResults runs={transcriptionRuns} appliedModelId={appliedTranscriptionModel} onApply={(run) => applyTranscription(run, sourceMeta.duration)} />
@@ -722,6 +729,25 @@ export default function Studio() {
             <div className="modal-or"><span>or</span></div>
             <button className="demo-button" type="button" onClick={loadDemo} disabled={processing}><Play size={15} fill="currentColor" /> Load the AI-models demo</button>
             <div className="modal-features"><span><Check size={13} /> EN + DE + RU</span><span><Check size={13} /> Word timing</span><span><Check size={13} /> Side-by-side results</span></div>
+          </div>
+        </div>
+      ) : null}
+
+      {showComparison && transcriptionRuns.length ? (
+        <div className="modal-backdrop comparison-backdrop">
+          <div className="comparison-modal" role="dialog" aria-modal="true" aria-labelledby="comparison-title">
+            <button className="modal-close" type="button" onClick={() => setShowComparison(false)} aria-label="Close transcript comparison"><X size={18} /></button>
+            <span className="modal-kicker"><Layers3 size={14} /> Transcription benchmark</span>
+            <h2 id="comparison-title">Compare every transcript.</h2>
+            <p>Review wording, missing phrases, timing, and processing speed. Choose the transcript that best matches what was actually said.</p>
+            <TranscriptionComparisonResults
+              runs={transcriptionRuns}
+              appliedModelId={appliedTranscriptionModel}
+              onApply={(run) => {
+                applyTranscription(run, sourceMeta.duration);
+                setShowComparison(false);
+              }}
+            />
           </div>
         </div>
       ) : null}
