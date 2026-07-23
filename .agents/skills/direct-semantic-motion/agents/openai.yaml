@@ -1,0 +1,4 @@
+interface:
+  display_name: "Semantic Motion Director"
+  short_description: "Turn timed speech meaning into grounded motion scenes"
+  default_prompt: "Analyze this timed transcript and produce a grounded, editable motion-graphics plan synchronized to the speaker."

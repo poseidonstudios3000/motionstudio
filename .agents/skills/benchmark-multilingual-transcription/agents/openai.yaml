@@ -1,0 +1,4 @@
+interface:
+  display_name: "Multilingual Transcription Benchmark"
+  short_description: "Compare speech models on accuracy, timing, cost, and speed"
+  default_prompt: "Benchmark these transcription candidates on the same multilingual talking-head fixtures and recommend the best quality and timing pipeline."

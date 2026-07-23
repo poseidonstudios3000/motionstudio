@@ -4,6 +4,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { AbsoluteFill, Easing, interpolate, spring, useCurrentFrame } from "remotion";
 import { Video } from "@remotion/media";
 import {
+  Bot,
   Braces,
   Code2,
   FileCode2,
@@ -34,6 +35,7 @@ import {
 export type CaptionPreset = "punch" | "clean" | "editorial";
 export type MotionStyle = "kinetic" | "clean" | "editorial";
 export type BrandKind = "openai" | "anthropic" | "gemini" | "glm" | "apple" | "google" | "meta" | "microsoft" | "amazon" | "tesla" | "nvidia";
+export type CountryKind = "us" | "china" | "germany" | "russia" | "india" | "eu" | "other";
 export type TimedWord = { text: string; start: number; end: number };
 export type VisualKind =
   | "hook"
@@ -46,6 +48,7 @@ export type VisualKind =
   | "travel"
   | "social"
   | "stat"
+  | "race"
   | "keyword";
 
 export type SceneSpec = {
@@ -58,6 +61,7 @@ export type SceneSpec = {
   detail: string;
   brand?: BrandKind;
   brands?: BrandKind[];
+  countries?: CountryKind[];
   platforms?: Array<"instagram" | "tiktok" | "youtube">;
   metric?: string;
   origin?: string;
@@ -134,6 +138,16 @@ const brandLabels: Record<BrandKind, string> = {
   amazon: "Amazon",
   tesla: "Tesla",
   nvidia: "NVIDIA",
+};
+
+const countryMeta: Record<CountryKind, { flag: string; label: string }> = {
+  us: { flag: "🇺🇸", label: "US" },
+  china: { flag: "🇨🇳", label: "China" },
+  germany: { flag: "🇩🇪", label: "Germany" },
+  russia: { flag: "🇷🇺", label: "Russia" },
+  india: { flag: "🇮🇳", label: "India" },
+  eu: { flag: "🇪🇺", label: "EU" },
+  other: { flag: "🌐", label: "Another?" },
 };
 
 const Stage = ({ eyebrow, accent, children }: { eyebrow: string; accent: string; children: ReactNode }) => (
@@ -381,6 +395,40 @@ const StatVisual = ({ localFrame, accent, scene }: VisualProps) => {
   );
 };
 
+const RaceVisual = ({ localFrame, accent, scene }: VisualProps) => {
+  const competitors = scene.countries?.length ? scene.countries.slice(0, 4) : ["other" as const];
+  return (
+    <Stage eyebrow={scene.eyebrow} accent={accent}>
+      <div style={{ ...card(accent), position: "absolute", inset: 0, overflow: "hidden", padding: "30px 36px 34px" }}>
+        <div style={{ display: "flex", alignItems: "end", justifyContent: "space-between", marginBottom: 22 }}>
+          <div>
+            <div style={{ color: accent, fontSize: 20, fontWeight: 900, letterSpacing: ".14em", textTransform: "uppercase" }}>Editorial metaphor</div>
+            <div style={{ marginTop: 8, fontSize: 58, lineHeight: .92, fontWeight: 950, letterSpacing: "-.06em", textTransform: "uppercase" }}>The AI race</div>
+          </div>
+          <div style={{ maxWidth: 310, color: "rgba(255,255,255,.55)", fontSize: 22, lineHeight: 1.2, textAlign: "right" }}>{scene.title}</div>
+        </div>
+        <div style={{ display: "grid", gap: 12 }}>
+          {competitors.map((country, index) => {
+            const meta = countryMeta[country];
+            const drive = interpolate(localFrame - index * 5, [0, 34], [0, 1], clamp);
+            const lead = index % 2 === 0 ? 44 : 0;
+            return (
+              <div key={country} style={{ position: "relative", height: 92, overflow: "hidden", borderRadius: 20, backgroundColor: "rgba(255,255,255,.045)", border: "1px solid rgba(255,255,255,.09)" }}>
+                {[1, 2, 3, 4, 5].map((mark) => <span key={mark} style={{ position: "absolute", left: mark * 145 - (localFrame * 7 % 145), top: 44, width: 78, height: 3, borderRadius: 8, backgroundColor: "rgba(255,255,255,.16)" }} />)}
+                <div style={{ position: "absolute", left: 16 + drive * (580 + lead), top: 12, width: 142, height: 68, display: "flex", alignItems: "center", gap: 10, padding: "0 14px", borderRadius: 18, backgroundColor: country === "other" ? "#242832" : accent, color: "white", boxShadow: country === "other" ? "none" : `0 0 28px ${accent}55`, transform: `rotate(${Math.sin(localFrame * .18 + index) * 1.8}deg)` }}>
+                  <Bot size={37} strokeWidth={2.2} />
+                  <span style={{ fontSize: 29 }}>{meta.flag}</span>
+                  <strong style={{ fontSize: 15, textTransform: "uppercase" }}>{meta.label}</strong>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </Stage>
+  );
+};
+
 const KeywordVisual = ({ localFrame, accent, scene }: VisualProps) => {
   const scale = spring({ fps: 30, frame: localFrame, config: { damping: 13, stiffness: 160 } });
   return (
@@ -405,6 +453,7 @@ const VisualStage = (props: VisualProps) => {
   if (props.scene.kind === "travel") return <TravelVisual {...props} />;
   if (props.scene.kind === "social") return <SocialVisual {...props} />;
   if (props.scene.kind === "stat") return <StatVisual {...props} />;
+  if (props.scene.kind === "race") return <RaceVisual {...props} />;
   return <KeywordVisual {...props} />;
 };
 

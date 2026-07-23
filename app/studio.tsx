@@ -7,6 +7,7 @@ import {
   AudioLines,
   AlertTriangle,
   BadgeCheck,
+  Bot,
   Captions,
   Check,
   ChevronDown,
@@ -52,7 +53,7 @@ import {
   type VisualKind,
 } from "./motion-composition";
 import { extractSpeechAudio, inspectMedia, MAX_ANALYSIS_SECONDS, normalizeTimedWords } from "./media-analysis";
-import { planStoryboard } from "./storyboard";
+import { planStoryboard, type DetectedLanguage } from "./storyboard";
 
 const FPS = 30;
 const demoTranscript =
@@ -78,6 +79,7 @@ const sceneNames: Record<VisualKind, string> = {
   travel: "Map journey",
   social: "Social logos",
   stat: "Data counter",
+  race: "Country robot race",
   keyword: "Kinetic keyword",
 };
 
@@ -92,6 +94,7 @@ const sceneIcons: Record<VisualKind, typeof Sparkles> = {
   travel: Map,
   social: ImageIcon,
   stat: Gauge,
+  race: Bot,
   keyword: Sparkles,
 };
 
@@ -102,6 +105,7 @@ const formatTime = (seconds: number) => {
 };
 
 const formatBytes = (bytes: number) => bytes ? `${(bytes / 1024 / 1024).toFixed(bytes > 100 * 1024 * 1024 ? 0 : 1)} MB` : "Demo source";
+const languageName: Record<DetectedLanguage, string> = { EN: "English", DE: "German", RU: "Russian" };
 
 type Panel = "scenes" | "captions" | "brand";
 type RenderStatus = "idle" | "checking" | "rendering" | "complete" | "error";
@@ -117,7 +121,7 @@ export default function Studio() {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [fileName, setFileName] = useState("AI models — demo.mov");
   const [sourceMeta, setSourceMeta] = useState({ duration: 18.2, width: 1080, height: 1920, size: 0 });
-  const [language, setLanguage] = useState<"EN" | "DE">("EN");
+  const [language, setLanguage] = useState<DetectedLanguage>("EN");
   const [transcript, setTranscript] = useState(demoTranscript);
   const [words, setWords] = useState<TimedWord[]>([]);
   const [scenes, setScenes] = useState<SceneSpec[]>(demoScenes);
@@ -481,7 +485,7 @@ export default function Studio() {
           <div className="workflow-list">
             {[
               { n: "01", label: "Source", meta: `${formatTime(sourceMeta.duration)} · ${sourceMeta.width}×${sourceMeta.height}`, icon: CloudUpload },
-              { n: "02", label: "Transcript", meta: needsTranscript ? "Needs review" : `${language === "DE" ? "German" : "English"} · ${transcript.trim().split(/\s+/).filter(Boolean).length} words`, icon: Languages },
+              { n: "02", label: "Transcript", meta: needsTranscript ? "Needs review" : `${languageName[language]} · ${transcript.trim().split(/\s+/).filter(Boolean).length} words`, icon: Languages },
               { n: "03", label: "AI Storyboard", meta: `${scenes.length} visual beats`, icon: WandSparkles },
               { n: "04", label: "Style", meta: `${captionPreset} · ${motionStyle}`, icon: Palette },
               { n: "05", label: "Export", meta: `9:16 · ${resolution}p`, icon: Download },
@@ -499,12 +503,12 @@ export default function Studio() {
         <aside className={"transcript-panel " + (activePanel === "captions" ? "active-panel" : "")} aria-label="Transcript and captions editor">
           <div className="panel-titlebar"><span><Captions size={15} /> Transcript</span><small>{transcript.trim().split(/\s+/).filter(Boolean).length} words</small></div>
           <div className="panel-content transcript-content">
-            <div className="section-heading"><div><span>Captions</span><strong>{language === "DE" ? "German" : "English"} transcript</strong></div><span className="confidence"><BadgeCheck size={13} /> {words.length ? "Word timed" : "Estimated"}</span></div>
+            <div className="section-heading"><div><span>Captions</span><strong>{languageName[language]} transcript</strong></div><span className="confidence"><BadgeCheck size={13} /> {words.length ? "Word timed" : "Estimated"}</span></div>
             <div className="speech-model-row"><span><AudioLines size={15} /><span><strong>Whisper tiny</strong><small>Local / q8 WASM</small></span></span><em>Fast model</em></div>
             {needsTranscript ? <div className="prototype-note"><Sparkles size={16} /><p>Local transcription could not finish for this source. Paste the transcript here; the context director will still build a custom storyboard.</p></div> : null}
             {storyboardDirty && transcript.trim() ? <div className="stale-note"><RefreshCcw size={14} /> Transcript changed - regenerate scenes before export.</div> : null}
             <label className="transcript-editor-label" htmlFor="transcript-editor"><span>Spoken text</span><small>Edit mistakes directly. Timing becomes estimated after a manual edit.</small></label>
-            <textarea id="transcript-editor" className="transcript-field transcript-field-persistent" value={transcript} onChange={(event) => { setTranscript(event.target.value); setWords([]); setStoryboardDirty(true); setNeedsTranscript(!event.target.value.trim()); setActivePanel("captions"); }} placeholder={language === "DE" ? "Transkript hier einfügen…" : "Paste transcript here…"} aria-label="Transcript" />
+            <textarea id="transcript-editor" className="transcript-field transcript-field-persistent" value={transcript} onChange={(event) => { setTranscript(event.target.value); setWords([]); setStoryboardDirty(true); setNeedsTranscript(!event.target.value.trim()); setActivePanel("captions"); }} placeholder={language === "DE" ? "Transkript hier einfügen…" : language === "RU" ? "Вставьте расшифровку…" : "Paste transcript here…"} aria-label="Transcript" />
             <button className="primary-action" type="button" onClick={() => redirectScenes()} disabled={!transcript.trim()}><WandSparkles size={16} /> Apply transcript and rebuild scenes</button>
             <div className="control-section"><div className="control-label"><span>Caption style</span><small>Live preview</small></div><div className="preset-grid">{([ ["punch", "PUNCH", "Fast & bold"], ["clean", "Clean", "Calm & modern"], ["editorial", "Editorial", "Premium serif"] ] as Array<[CaptionPreset, string, string]>).map(([value, label, detail]) => <button className={captionPreset === value ? "active" : ""} type="button" key={value} onClick={() => { setCaptionPreset(value); setActivePanel("captions"); }} aria-pressed={captionPreset === value}><strong className={"caption-sample " + value}>{label}</strong><small>{detail}</small></button>)}</div></div>
             <div className="toggle-row"><div><AudioLines size={17} /><span><strong>Word timing</strong><small>{words.length ? "Whisper timestamps" : "Estimated from duration"}</small></span></div><button className={"switch " + (wordTiming ? "on" : "")} role="switch" aria-checked={wordTiming} type="button" aria-label="Highlight active caption word" onClick={() => { setWordTiming((value) => !value); setActivePanel("captions"); }}><span /></button></div>
@@ -526,7 +530,7 @@ export default function Studio() {
           <div className="panel-content" id="panel-scenes">
             <div className="section-heading"><div><span>AI Storyboard</span><strong>{scenes.length} grounded beats</strong></div><button type="button" onClick={() => redirectScenes()} aria-label="Regenerate storyboard" disabled={!transcript.trim() || processing}><RefreshCcw size={15} /></button></div>
             <div className="scene-list">{scenes.map((scene, index) => { const Icon = sceneIcons[scene.kind]; return <button type="button" key={scene.id} className={`scene-card ${scene.id === selectedScene?.id ? "selected" : ""} ${scene.id === playingSceneId ? "playing" : ""}`} onClick={() => selectScene(scene)} aria-current={scene.id === playingSceneId ? "true" : undefined}><span className="scene-index">{String(index + 1).padStart(2, "0")}</span><span className="scene-thumbnail"><Icon size={23} /></span><span className="scene-copy"><small>{formatTime(scene.start * sourceMeta.duration)} – {formatTime(scene.end * sourceMeta.duration)}</small><strong>{scene.title}</strong><em>{sceneNames[scene.kind]}</em></span><MoreHorizontal size={16} /></button>; })}</div>
-            {selectedScene ? <div className="scene-editor"><label><span>Visual treatment</span><select value={selectedScene.kind} onChange={(event) => updateScene({ kind: event.target.value as VisualKind })}>{Object.entries(sceneNames).map(([value, name]) => <option key={value} value={value}>{name}</option>)}</select></label><label><span>Scene headline</span><input value={selectedScene.title} onChange={(event) => updateScene({ title: event.target.value })} /></label><button className="secondary-action" type="button" onClick={() => { const variation = planStoryboard({ transcript: selectedScene.detail, duration: Math.max(1, (selectedScene.end - selectedScene.start) * sourceMeta.duration), dopaminePacing: false }).scenes[0]; updateScene({ kind: variation.kind, eyebrow: variation.eyebrow, brand: variation.brand, brands: variation.brands, platforms: variation.platforms, metric: variation.metric, origin: variation.origin, destination: variation.destination, ctaLabel: variation.ctaLabel }); }}><WandSparkles size={15} /> Re-direct this scene</button></div> : null}
+            {selectedScene ? <div className="scene-editor"><label><span>Visual treatment</span><select value={selectedScene.kind} onChange={(event) => updateScene({ kind: event.target.value as VisualKind })}>{Object.entries(sceneNames).map(([value, name]) => <option key={value} value={value}>{name}</option>)}</select></label><label><span>Scene headline</span><input value={selectedScene.title} onChange={(event) => updateScene({ title: event.target.value })} /></label><button className="secondary-action" type="button" onClick={() => { const variation = planStoryboard({ transcript: selectedScene.detail, duration: Math.max(1, (selectedScene.end - selectedScene.start) * sourceMeta.duration), dopaminePacing: false }).scenes[0]; updateScene({ kind: variation.kind, eyebrow: variation.eyebrow, brand: variation.brand, brands: variation.brands, countries: variation.countries, platforms: variation.platforms, metric: variation.metric, origin: variation.origin, destination: variation.destination, ctaLabel: variation.ctaLabel }); }}><WandSparkles size={15} /> Re-direct this scene</button></div> : null}
           </div>
         </aside>
 
@@ -549,7 +553,7 @@ export default function Studio() {
         <div className="timeline-tracks"><div className="track-label"><Sparkles size={14} /><span>Motion</span></div><div className="track-scroll"><div className="scene-track" style={{ width: `${timelineZoom * 100}%` }}><i className="timeline-playhead" style={{ left: `${currentProgress * 100}%` }} />{scenes.map((scene, index) => { const Icon = sceneIcons[scene.kind]; return <button type="button" key={scene.id} className={`${scene.id === selectedScene?.id ? "selected" : ""} ${scene.id === playingSceneId ? "playing" : ""}`} style={{ width: `${Math.max(5, (scene.end - scene.start) * 100)}%` }} onClick={() => selectScene(scene)}><Icon size={13} /><span>{index + 1}. {sceneNames[scene.kind]}</span></button>; })}</div></div><div className="track-label"><Captions size={14} /><span>Captions</span></div><div className="track-scroll"><div className="caption-track" style={{ width: `${timelineZoom * 100}%` }}><span>{transcript || "Transcript required"}</span></div></div></div>
       </section>
 
-      {showImport ? <div className="modal-backdrop"><div className="import-modal" role="dialog" aria-modal="true" aria-labelledby="import-title"><button className="modal-close" type="button" onClick={() => setShowImport(false)} aria-label="Close upload" disabled={processing}><X size={18} /></button><span className="modal-kicker"><Sparkles size={14} /> New scroll stopper</span><h2 id="import-title">Drop in the raw talking head.</h2><p>Local Whisper detects English or German and turns the actual speech into timed captions and grounded visual beats.</p>{uploadError ? <div className="modal-error" role="alert"><AlertTriangle size={16} />{uploadError}</div> : null}<button className={`dropzone ${dropActive ? "active" : ""}`} type="button" onClick={() => fileInput.current?.click()} onDragEnter={(event) => { event.preventDefault(); setDropActive(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDropActive(false)} onDrop={handleDrop} disabled={processing}><span>{processing ? <LoaderCircle className="spin" size={26} /> : <Upload size={26} />}</span><strong>{processing ? analysisStage : "Choose video or drop it here"}</strong><small>Up to 500 MB · first 90 seconds analyzed · browser-decodable MP4, MOV, WebM or MKV</small></button><input ref={fileInput} hidden type="file" accept="video/*,.mkv,.avi,.mov,.webm" onChange={(event) => { const file = event.target.files?.[0]; event.currentTarget.value = ""; if (file) void handleFile(file); }} /><div className="privacy-note"><BadgeCheck size={14} /> Video and transcription stay on this device. The speech model downloads once and is cached by your browser.</div><div className="modal-or"><span>or</span></div><button className="demo-button" type="button" onClick={loadDemo} disabled={processing}><Play size={15} fill="currentColor" /> Load the AI-models demo</button><div className="modal-features"><span><Check size={13} /> EN + DE</span><span><Check size={13} /> Word timing</span><span><Check size={13} /> Context scenes</span></div></div></div> : null}
+      {showImport ? <div className="modal-backdrop"><div className="import-modal" role="dialog" aria-modal="true" aria-labelledby="import-title"><button className="modal-close" type="button" onClick={() => setShowImport(false)} aria-label="Close upload" disabled={processing}><X size={18} /></button><span className="modal-kicker"><Sparkles size={14} /> New scroll stopper</span><h2 id="import-title">Drop in the raw talking head.</h2><p>Local Whisper detects English, German, or Russian and turns the actual speech into timed captions and grounded visual beats.</p>{uploadError ? <div className="modal-error" role="alert"><AlertTriangle size={16} />{uploadError}</div> : null}<button className={`dropzone ${dropActive ? "active" : ""}`} type="button" onClick={() => fileInput.current?.click()} onDragEnter={(event) => { event.preventDefault(); setDropActive(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDropActive(false)} onDrop={handleDrop} disabled={processing}><span>{processing ? <LoaderCircle className="spin" size={26} /> : <Upload size={26} />}</span><strong>{processing ? analysisStage : "Choose video or drop it here"}</strong><small>Up to 500 MB · first 90 seconds analyzed · browser-decodable MP4, MOV, WebM or MKV</small></button><input ref={fileInput} hidden type="file" accept="video/*,.mkv,.avi,.mov,.webm" onChange={(event) => { const file = event.target.files?.[0]; event.currentTarget.value = ""; if (file) void handleFile(file); }} /><div className="privacy-note"><BadgeCheck size={14} /> Video and transcription stay on this device. The speech model downloads once and is cached by your browser.</div><div className="modal-or"><span>or</span></div><button className="demo-button" type="button" onClick={loadDemo} disabled={processing}><Play size={15} fill="currentColor" /> Load the AI-models demo</button><div className="modal-features"><span><Check size={13} /> EN + DE + RU</span><span><Check size={13} /> Word timing</span><span><Check size={13} /> Context scenes</span></div></div></div> : null}
 
       {renderStatus !== "idle" ? <div className={`render-toast ${renderStatus}`} role={renderStatus === "error" ? "alert" : "status"}><span className="render-icon">{renderStatus === "complete" ? <Check size={18} /> : renderStatus === "error" ? <X size={18} /> : <LoaderCircle className="spin" size={18} />}</span><div><strong>{renderStatus === "complete" ? "Export complete" : renderStatus === "error" ? "Export needs attention" : renderStatus === "checking" ? "Checking MP4 support" : "Rendering MP4"}</strong><p>{renderMessage}</p>{renderStatus === "rendering" ? <div className="render-progress"><span style={{ width: `${renderProgress}%` }} /></div> : null}</div>{renderStatus === "rendering" ? <button className="render-cancel" type="button" onClick={cancelRender}>Cancel {renderProgress}%</button> : <button type="button" onClick={() => setRenderStatus("idle")} aria-label="Dismiss export message"><X size={15} /></button>}</div> : null}
     </main>

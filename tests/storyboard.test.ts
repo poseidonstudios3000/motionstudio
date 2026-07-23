@@ -50,3 +50,33 @@ test("uses Whisper word timestamps to place beat boundaries", () => {
   assert.equal(result.scenes[1].start, 0.6);
   assert.equal(result.scenes[1].brand, "tesla");
 });
+
+test("turns an AI competition question into grounded country robot races", () => {
+  const result = planStoryboard({
+    transcript: "Who will win the AI race? The US, China, or another country?",
+    duration: 9,
+  });
+  assert.equal(result.scenes[0].kind, "race");
+  assert.deepEqual(result.scenes[0].countries, ["us", "china", "other"]);
+  assert.equal(result.scenes[1].kind, "race");
+  assert.deepEqual(result.scenes[1].countries, ["us", "china", "other"]);
+  assert.equal(result.scenes.flatMap((scene) => scene.countries ?? []).includes("russia"), false);
+});
+
+test("detects Russian competition language and spoken countries", () => {
+  const result = planStoryboard({
+    transcript: "Кто победит в гонке искусственного интеллекта: США, Китай или другая страна?",
+    duration: 8,
+  });
+  assert.equal(result.language, "RU");
+  assert.equal(result.scenes[0].kind, "race");
+  assert.deepEqual(result.scenes[0].countries, ["us", "china", "other"]);
+});
+
+test("does not assign a specific flag to another country", () => {
+  const result = planStoryboard({
+    transcript: "Could another country win the AI race?",
+    duration: 5,
+  });
+  assert.deepEqual(result.scenes[0].countries, ["other"]);
+});
