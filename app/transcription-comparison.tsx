@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Check, Clock3, Cloud, HardDrive, type LucideIcon } from "lucide-react";
 import type { TimedWord } from "./motion-composition";
 import {
@@ -127,6 +128,8 @@ export const TranscriptionComparisonResults = ({
   appliedModelId: TranscriptionModelId | null;
   onApply: (run: TranscriptionRun) => void;
 }) => {
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+
   if (!runs.length) return null;
   return (
     <section className="comparison-results" aria-label="Transcription comparison results">
@@ -135,13 +138,35 @@ export const TranscriptionComparisonResults = ({
         {runs.map((run) => {
           const model = getTranscriptionModel(run.modelId);
           const applied = appliedModelId === run.modelId;
+          const draft = drafts[run.modelId] ?? run.text;
+          const edited = draft !== run.text;
           return (
             <article className={`comparison-card ${run.status} ${applied ? "applied" : ""}`} key={run.modelId}>
               <header><span><ProviderIcon provider={model.provider} /><strong>{model.shortLabel}</strong></span><em><Clock3 size={11} />{formatElapsed(run.elapsedMs)}</em></header>
               {run.status === "success" ? (
                 <>
-                  <p>{run.text}</p>
-                  <footer><span>{run.text.split(/\s+/).filter(Boolean).length} words · {run.words.length ? "word timed" : "segment timed"}</span><button type="button" onClick={() => onApply(run)} disabled={applied}>{applied ? <><Check size={12} /> Selected</> : "Select transcript"}</button></footer>
+                  <label className="comparison-edit-label" htmlFor={`comparison-draft-${run.modelId}`}>Edit this model&apos;s transcript</label>
+                  <textarea
+                    id={`comparison-draft-${run.modelId}`}
+                    className="comparison-draft"
+                    value={draft}
+                    onChange={(event) => setDrafts((current) => ({ ...current, [run.modelId]: event.target.value }))}
+                    aria-label={`Edit ${model.shortLabel} transcript`}
+                    spellCheck
+                  />
+                  <footer>
+                    <span>{draft.trim().split(/\s+/).filter(Boolean).length} words · {edited ? "edited · timing estimated" : run.words.length ? "word timed" : "segment timed"}</span>
+                    <div className="comparison-actions">
+                      {edited ? <button className="comparison-reset" type="button" onClick={() => setDrafts((current) => ({ ...current, [run.modelId]: run.text }))}>Reset</button> : null}
+                      <button
+                        type="button"
+                        onClick={() => onApply({ ...run, text: draft.trim(), words: edited ? [] : run.words })}
+                        disabled={!draft.trim() || (applied && !edited)}
+                      >
+                        {applied && !edited ? <><Check size={12} /> Selected</> : "Save & select"}
+                      </button>
+                    </div>
+                  </footer>
                 </>
               ) : <p className="comparison-error">{run.error ?? "This model could not transcribe the clip."}</p>}
             </article>

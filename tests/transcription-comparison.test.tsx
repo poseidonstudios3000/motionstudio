@@ -26,6 +26,8 @@ test("renders every selected model result in the full comparison view", () => {
   assert.match(html, /Groq accuracy transcript/);
   assert.match(html, /Local tiny transcript/);
   assert.match(html, /Local small transcript/);
+  assert.match(html, /Save &amp; select/);
+  assert.equal((html.match(/<textarea/g) ?? []).length, 4);
   assert.equal((html.match(/comparison-card success/g) ?? []).length, 4);
 });
 

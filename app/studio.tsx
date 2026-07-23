@@ -71,19 +71,23 @@ import {
 
 const FPS = 30;
 const APP_VERSION = packageJson.version;
-type MaterialPreset = "graphite" | "silver" | "chrome" | "titanium";
-type FontPreset = "geist" | "swiss" | "humanist" | "technical";
+type MaterialPreset = "graphite" | "silver" | "chrome" | "titanium" | "carbon" | "frost";
+type FontPreset = "geist" | "swiss" | "humanist" | "technical" | "editorial" | "rounded";
 const MATERIAL_PRESETS: readonly { id: MaterialPreset; label: string; shortLabel: string }[] = [
-  { id: "graphite", label: "Graphite", shortLabel: "G" },
-  { id: "silver", label: "Silver", shortLabel: "S" },
-  { id: "chrome", label: "Chrome", shortLabel: "C" },
-  { id: "titanium", label: "Titanium", shortLabel: "T" },
+  { id: "graphite", label: "Graphite · plain", shortLabel: "GP" },
+  { id: "silver", label: "Silver · plain", shortLabel: "SP" },
+  { id: "chrome", label: "Chrome · gradient", shortLabel: "CG" },
+  { id: "titanium", label: "Titanium · gradient", shortLabel: "TG" },
+  { id: "carbon", label: "Carbon · plain", shortLabel: "CP" },
+  { id: "frost", label: "Frost · gradient", shortLabel: "FG" },
 ];
 const FONT_PRESETS: readonly { id: FontPreset; label: string; shortLabel: string }[] = [
   { id: "geist", label: "Geist", shortLabel: "G" },
   { id: "swiss", label: "Swiss", shortLabel: "H" },
   { id: "humanist", label: "Humanist", shortLabel: "A" },
   { id: "technical", label: "Technical", shortLabel: "01" },
+  { id: "editorial", label: "Editorial serif", shortLabel: "E" },
+  { id: "rounded", label: "Rounded modern", shortLabel: "R" },
 ];
 const demoTranscript =
   "Stop building games with ChatGPT. Claude Code ships a playable game in one shot. GLM 5.2 wins in wild mechanics. Gemini eats your whole codebase and assets in one prompt. So which one is your default? Comment down below.";
@@ -670,7 +674,7 @@ export default function Studio() {
         </div>
         <div className="project-heading"><span className={`project-status-dot ${needsTranscript || storyboardDirty ? "warning" : "success"}`} /><div><strong>{fileName}</strong><span>Local draft · private on this device</span></div><ChevronDown size={15} /></div>
         <div className="topbar-actions">
-          <div className="ui-preset-control" aria-label="Material theme"><span>Material</span><div>{MATERIAL_PRESETS.map((preset) => <button type="button" key={preset.id} className={materialPreset === preset.id ? "active" : ""} aria-pressed={materialPreset === preset.id} title={preset.label} onClick={() => setMaterialPreset(preset.id)}>{preset.shortLabel}</button>)}</div></div>
+          <div className="ui-preset-control" aria-label="Background theme"><span>Background</span><div>{MATERIAL_PRESETS.map((preset) => <button type="button" key={preset.id} className={materialPreset === preset.id ? "active" : ""} aria-pressed={materialPreset === preset.id} title={preset.label} onClick={() => setMaterialPreset(preset.id)}>{preset.shortLabel}</button>)}</div></div>
           <div className="ui-preset-control font-preset-control" aria-label="Font set"><span>Type</span><div>{FONT_PRESETS.map((preset) => <button type="button" key={preset.id} className={fontPreset === preset.id ? "active" : ""} aria-pressed={fontPreset === preset.id} title={preset.label} onClick={() => setFontPreset(preset.id)}>{preset.shortLabel}</button>)}</div></div>
         </div>
       </header>
@@ -701,15 +705,20 @@ export default function Studio() {
             <div className="section-heading"><div><span>Captions</span><strong>{languageName[language]} transcript</strong></div><span className="confidence"><BadgeCheck size={13} /> {words.length ? "Word timed" : "Estimated"}</span></div>
             <div className="speech-model-row"><span><AudioLines size={15} /><span><strong>{appliedModel?.label ?? "Transcription benchmark"}</strong><small>{appliedModel ? `${appliedModel.provider === "groq" ? "Groq cloud" : "On device"} · ${appliedModel.wordTimestamps ? "word timed" : "text only"}` : "Choose models below"}</small></span></span><em>{appliedModel ? "Selected" : `${selectedTranscriptionModels.length} selected`}</em></div>
             {transcriptionRuns.length ? <button className="comparison-open" type="button" onClick={() => setShowComparison(true)}><Layers3 size={14} /> Open full transcript comparison</button> : null}
-            <TranscriptionLanguagePicker value={selectedSpeechLanguage} disabled={processing} onChange={setSelectedSpeechLanguage} />
-            <TranscriptionGlossaryInput value={transcriptionGlossary} disabled={processing} onChange={setTranscriptionGlossary} />
-            <TranscriptionModelPicker selected={selectedTranscriptionModels} disabled={processing} onToggle={toggleTranscriptionModel} />
-            {hasSourceAudio ? <button className="secondary-action rerun-models" type="button" onClick={() => void rerunTranscriptionComparison()} disabled={processing}><RefreshCcw size={14} /> Run selected models on current audio</button> : null}
             {needsTranscript ? <div className="prototype-note"><Sparkles size={16} /><p>Local transcription could not finish for this source. Paste the transcript here; the context director will still build a custom storyboard.</p></div> : null}
             {storyboardDirty && transcript.trim() ? <div className="stale-note"><RefreshCcw size={14} /> Review spelling, then save this transcript to generate the scenes.</div> : null}
             <label className="transcript-editor-label" htmlFor="transcript-editor"><span>Spoken text</span><small>Edit mistakes directly. Timing becomes estimated after a manual edit.</small></label>
             <textarea id="transcript-editor" className="transcript-field transcript-field-persistent" value={transcript} onChange={(event) => { setTranscript(event.target.value); setWords([]); setStoryboardDirty(true); setNeedsTranscript(!event.target.value.trim()); setActivePanel("captions"); }} placeholder={language === "DE" ? "Transkript hier einfügen…" : language === "RU" ? "Вставьте расшифровку…" : "Paste transcript here…"} aria-label="Transcript" />
             <button className="primary-action" type="button" onClick={() => redirectScenes()} disabled={!transcript.trim()}><WandSparkles size={16} /> Save transcript and generate scenes</button>
+            <details className="transcription-settings">
+              <summary><span>Transcription setup</span><small>Language · names · models</small></summary>
+              <div>
+                <TranscriptionLanguagePicker value={selectedSpeechLanguage} disabled={processing} onChange={setSelectedSpeechLanguage} />
+                <TranscriptionGlossaryInput value={transcriptionGlossary} disabled={processing} onChange={setTranscriptionGlossary} />
+                <TranscriptionModelPicker selected={selectedTranscriptionModels} disabled={processing} onToggle={toggleTranscriptionModel} />
+                {hasSourceAudio ? <button className="secondary-action rerun-models" type="button" onClick={() => void rerunTranscriptionComparison()} disabled={processing}><RefreshCcw size={14} /> Run selected models on current audio</button> : null}
+              </div>
+            </details>
             <div className="control-section"><div className="control-label"><span>Caption style</span><small>Live preview</small></div><div className="preset-grid">{([ ["punch", "PUNCH", "Fast & bold"], ["clean", "Clean", "Calm & modern"], ["editorial", "Editorial", "Premium serif"] ] as Array<[CaptionPreset, string, string]>).map(([value, label, detail]) => <button className={captionPreset === value ? "active" : ""} type="button" key={value} onClick={() => { setCaptionPreset(value); setActivePanel("captions"); }} aria-pressed={captionPreset === value}><strong className={"caption-sample " + value}>{label}</strong><small>{detail}</small></button>)}</div></div>
             <div className="toggle-row"><div><AudioLines size={17} /><span><strong>Word timing</strong><small>{words.length ? "Whisper timestamps" : "Estimated from duration"}</small></span></div><button className={"switch " + (wordTiming ? "on" : "")} role="switch" aria-checked={wordTiming} type="button" aria-label="Highlight active caption word" onClick={() => { setWordTiming((value) => !value); setActivePanel("captions"); }}><span /></button></div>
           </div>
@@ -717,10 +726,22 @@ export default function Studio() {
 
         <section className="preview-workspace">
           <div className="preview-toolbar"><div className="toolbar-group"><button className="tool-pill active" type="button" aria-pressed="true"><MousePointer2 size={15} /> Select</button><button className={`tool-pill ${sourceFit === "contain" ? "active" : ""}`} type="button" onClick={() => setSourceFit((value) => value === "cover" ? "contain" : "cover")} aria-pressed={sourceFit === "contain"}><Scissors size={15} /> {sourceFit === "cover" ? "Fill" : "Fit"}</button></div><div className="canvas-label"><MonitorPlay size={14} /> 1080 × 1920 <span>·</span> 30 FPS</div><button className="icon-button" type="button" onClick={() => setSoundEnabled((value) => !value)} aria-label="Toggle audio" aria-pressed={soundEnabled}>{soundEnabled ? <Volume2 size={17} /> : <VolumeX size={17} />}</button></div>
-          <div className="player-stage"><div className="player-glow" /><div className="player-frame">
+          <div className="player-stage"><div className="player-glow" />
+            <aside className="preview-context preview-context-left" aria-label="Source and transcript summary">
+              <span className="preview-context-kicker"><Gauge size={13} /> Source</span>
+              <strong>{formatTime(sourceMeta.duration)} talking head</strong>
+              <dl><div><dt>Frame</dt><dd>{sourceMeta.width} × {sourceMeta.height}</dd></div><div><dt>Audio</dt><dd>{hasSourceAudio ? "Ready" : videoUrl ? "Unavailable" : "Demo"}</dd></div><div><dt>Fit</dt><dd>{sourceFit === "cover" ? "Fill frame" : "Show full source"}</dd></div></dl>
+            </aside>
+            <div className="player-frame">
             <Player key={`${videoUrl ?? "demo"}-${durationInFrames}`} ref={playerRef} component={MotionComposition} inputProps={compositionProps} durationInFrames={durationInFrames} compositionWidth={1080} compositionHeight={1920} fps={FPS} controls={false} loop playbackRate={playbackRate} acknowledgeRemotionLicense style={{ width: "100%", height: "100%" }} />
             {processing ? <div className="analysis-overlay"><span className="analysis-orb"><Sparkles size={25} /></span><strong>{analysisStage}</strong><p>{analysisProgress}% · {usesGroqTranscription ? "local + secure Groq comparison" : "private, on-device transcription"}</p><div className="analysis-bar"><span style={{ width: `${analysisProgress}%` }} /></div></div> : null}
-          </div></div>
+            </div>
+            <aside className="preview-context preview-context-right" aria-label="Director and output summary">
+              <span className="preview-context-kicker"><Sparkles size={13} /> Director</span>
+              <strong>{storyboardDirty ? "Transcript needs saving" : "Storyboard ready"}</strong>
+              <dl><div><dt>Transcript</dt><dd>{transcript.trim().split(/\s+/).filter(Boolean).length} words</dd></div><div><dt>Scenes</dt><dd>{scenes.length} visual beats</dd></div><div><dt>Selected</dt><dd>{selectedScene ? sceneNames[selectedScene.kind] : "None"}</dd></div></dl>
+            </aside>
+          </div>
           {uploadError && !processing ? <div className="source-alert" role="alert"><AlertTriangle size={15} /><span>{uploadError}</span><button type="button" onClick={() => { setActivePanel("captions"); setUploadError(""); }}>Use transcript</button></div> : null}
           <div className="transport-bar"><button className="transport-play" type="button" onClick={togglePlayback} aria-label={isPlaying ? "Pause" : "Play"}>{isPlaying ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}</button><span className="timecode">{formatTime(currentFrame / FPS)}</span><input className="transport-line" type="range" min="0" max={Math.max(0, durationInFrames - 1)} value={Math.min(currentFrame, durationInFrames - 1)} onChange={handleSeek} aria-label="Video progress" style={{ "--progress": `${currentProgress * 100}%` } as CSSProperties} /><span className="timecode muted">{formatTime(sourceMeta.duration)}</span><button className="speed-pill" type="button" onClick={() => setPlaybackRate((value) => value === .5 ? 1 : value === 1 ? 1.5 : value === 1.5 ? 2 : .5)} aria-label={`Playback speed ${playbackRate} times`}>{playbackRate}×</button></div>
         </section>
@@ -788,7 +809,7 @@ export default function Studio() {
             <button className="modal-close" type="button" onClick={() => setShowComparison(false)} aria-label="Close transcript comparison"><X size={18} /></button>
             <span className="modal-kicker"><Layers3 size={14} /> Transcription benchmark</span>
             <h2 id="comparison-title">Compare every transcript.</h2>
-            <p>Language hint used: <strong>{comparisonLanguageLabel}</strong>. Select the best result, correct spelling in the transcript editor, then save it to generate scenes.</p>
+            <p>Language hint used: <strong>{comparisonLanguageLabel}</strong>. Correct words directly inside any model result, then choose <strong>Save &amp; select</strong>. Your edited version becomes the active transcript.</p>
             <TranscriptionComparisonResults
               runs={transcriptionRuns}
               appliedModelId={appliedTranscriptionModel}
