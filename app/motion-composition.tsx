@@ -31,6 +31,7 @@ import {
   SiTiktok,
   SiYoutube,
 } from "react-icons/si";
+import { createCaptionCues, estimateTimedWords, shiftTimedWords } from "./caption-timing";
 
 export type CaptionPreset = "punch" | "clean" | "editorial";
 export type MotionStyle = "kinetic" | "clean" | "editorial";
@@ -81,6 +82,8 @@ export type MotionCompositionProps = {
   soundEnabled: boolean;
   words: TimedWord[];
   wordTiming: boolean;
+  captionOffset: number;
+  captionScale: number;
   sourceFit: "cover" | "contain";
 };
 
@@ -471,25 +474,31 @@ const TalkingHeadPlaceholder = ({ accent, frame }: { accent: string; frame: numb
   );
 };
 
-const CaptionLayer = ({ transcript, words, preset, accent, progress, currentSeconds, wordTiming }: { transcript: string; words: TimedWord[]; preset: CaptionPreset; accent: string; progress: number; currentSeconds: number; wordTiming: boolean }) => {
-  const displayWords = words.length ? words : transcript.trim().split(/\s+/).filter(Boolean).map((text) => ({ text, start: 0, end: 0 }));
-  if (!displayWords.length) return null;
-  const timedIndex = words.length ? words.findIndex((word) => currentSeconds >= word.start && currentSeconds < Math.max(word.end, word.start + .08)) : -1;
-  const previousTimedIndex = words.length ? words.reduce((latest, word, index) => word.start <= currentSeconds ? index : latest, 0) : -1;
-  const activeIndex = timedIndex >= 0 ? timedIndex : previousTimedIndex >= 0 ? previousTimedIndex : Math.min(displayWords.length - 1, Math.floor(progress * displayWords.length));
-  const pageSize = preset === "clean" ? 6 : preset === "editorial" ? 5 : 4;
-  const pageStart = Math.floor(activeIndex / pageSize) * pageSize;
+const CaptionLayer = ({ transcript, words, preset, accent, currentSeconds, durationSeconds, wordTiming, captionOffset, captionScale }: { transcript: string; words: TimedWord[]; preset: CaptionPreset; accent: string; currentSeconds: number; durationSeconds: number; wordTiming: boolean; captionOffset: number; captionScale: number }) => {
+  const displayWords = words.length
+    ? shiftTimedWords(words, captionOffset)
+    : estimateTimedWords(transcript, durationSeconds, captionOffset);
+  const cues = createCaptionCues(displayWords, { maxWords: preset === "clean" ? 6 : 5, maxCharacters: preset === "clean" ? 38 : 32 });
+  const activeCue = cues.find((cue) => currentSeconds >= cue.start && currentSeconds < cue.end);
+  if (!activeCue) return null;
+  const timedIndex = activeCue.words.findIndex((word) => currentSeconds >= word.start && currentSeconds < Math.max(word.end, word.start + .08));
+  const previousTimedIndex = activeCue.words.reduce((latest, word, index) => word.start <= currentSeconds ? index : latest, -1);
+  const activeIndex = timedIndex >= 0 ? timedIndex : Math.max(0, previousTimedIndex);
+  const cueTextLength = activeCue.words.map((word) => word.text).join(" ").length;
+  const baseFontSize = preset === "clean" ? 58 : preset === "editorial" ? 65 : 72;
+  const fitScale = Math.min(1, Math.max(.44, 24 / Math.max(1, cueTextLength)));
+  const fontSize = baseFontSize * (captionScale / 100) * fitScale;
   return (
-    <div style={{ position: "absolute", left: 62, right: 62, top: 930, minHeight: 210, display: "flex", alignItems: "center", justifyContent: "center", flexWrap: "wrap", gap: preset === "clean" ? 10 : 14, textAlign: "center", textTransform: preset === "clean" ? "none" : "uppercase", fontFamily: preset === "editorial" ? "Georgia,Times New Roman,serif" : "inherit", fontWeight: preset === "editorial" ? 800 : 950, fontSize: preset === "clean" ? 58 : preset === "editorial" ? 65 : 72, lineHeight: 0.98, letterSpacing: preset === "clean" ? "-.035em" : "-.055em", textShadow: "0 5px 25px rgba(0,0,0,.9)" }}>
-      {displayWords.slice(pageStart, pageStart + pageSize).map((word, index) => {
-        const active = wordTiming && pageStart + index === activeIndex;
-        return <span key={`${pageStart + index}-${word.text}`} style={{ display: "inline-block", maxWidth: "100%", overflowWrap: "anywhere", padding: preset === "punch" && active ? "8px 13px 10px" : preset === "editorial" && active ? "3px 4px 11px" : "3px 1px", borderRadius: preset === "punch" && active ? 12 : 0, color: active ? (preset === "punch" ? "#070809" : accent) : "white", backgroundColor: preset === "punch" && active ? accent : "transparent", borderBottom: preset === "editorial" && active ? `8px solid ${accent}` : "none", transform: active && preset === "punch" ? "rotate(-1.5deg) scale(1.05)" : "none" }}>{word.text}</span>;
+    <div style={{ position: "absolute", left: 42, right: 42, top: 955, height: 145, display: "flex", alignItems: "center", justifyContent: "center", flexWrap: "nowrap", gap: preset === "clean" ? 9 : 11, overflow: "hidden", whiteSpace: "nowrap", textAlign: "center", textTransform: preset === "clean" ? "none" : "uppercase", fontFamily: preset === "editorial" ? "Georgia,Times New Roman,serif" : "inherit", fontWeight: preset === "editorial" ? 800 : 950, fontSize, lineHeight: 1, letterSpacing: preset === "clean" ? "-.035em" : "-.055em", textShadow: "0 5px 25px rgba(0,0,0,.9)" }}>
+      {activeCue.words.map((word, index) => {
+        const active = wordTiming && index === activeIndex;
+        return <span key={`${activeCue.start}-${index}-${word.text}`} style={{ display: "inline-block", flex: "0 0 auto", padding: preset === "punch" && active ? ".11em .18em .14em" : preset === "editorial" && active ? ".04em .06em .14em" : ".04em .01em", borderRadius: preset === "punch" && active ? 12 : 0, color: active ? (preset === "punch" ? "#070809" : accent) : "white", backgroundColor: preset === "punch" && active ? accent : "transparent", borderBottom: preset === "editorial" && active ? `.11em solid ${accent}` : "none", transform: active && preset === "punch" ? "rotate(-1.5deg) scale(1.04)" : "none" }}>{word.text}</span>;
       })}
     </div>
   );
 };
 
-export const MotionComposition = ({ videoUrl, transcript, scenes, captionPreset, motionStyle, accent, projectName, durationInFrames, soundEnabled, words, wordTiming, sourceFit }: MotionCompositionProps) => {
+export const MotionComposition = ({ videoUrl, transcript, scenes, captionPreset, motionStyle, accent, projectName, durationInFrames, soundEnabled, words, wordTiming, captionOffset, captionScale, sourceFit }: MotionCompositionProps) => {
   const frame = useCurrentFrame();
   const progress = frame / Math.max(1, durationInFrames - 1);
   const activeScene = scenes.find((scene) => progress >= scene.start && progress < scene.end) ?? scenes[scenes.length - 1];
@@ -506,7 +515,7 @@ export const MotionComposition = ({ videoUrl, transcript, scenes, captionPreset,
         {videoUrl ? <Video src={videoUrl} objectFit={sourceFit} premountFor={30} disallowFallbackToOffthreadVideo volume={soundEnabled ? 1 : 0} style={{ width: "100%", height: "100%", backgroundColor: "#08090b" }} /> : <TalkingHeadPlaceholder accent={accent} frame={frame} />}
       </div>
       <div style={{ position: "absolute", left: 0, right: 0, top: 980, height: 96, backgroundColor: "rgba(7,8,10,.62)" }} />
-      <CaptionLayer transcript={transcript} words={words} preset={captionPreset} accent={accent} progress={progress} currentSeconds={frame / 30} wordTiming={wordTiming} />
+      <CaptionLayer transcript={transcript} words={words} preset={captionPreset} accent={accent} currentSeconds={frame / 30} durationSeconds={durationInFrames / 30} wordTiming={wordTiming} captionOffset={captionOffset} captionScale={captionScale} />
       <div style={{ position: "absolute", top: 48, left: 52, display: "flex", alignItems: "center", gap: 13, color: "rgba(255,255,255,.72)", fontSize: 19, fontWeight: 900, letterSpacing: ".13em", textTransform: "uppercase" }}>
         <div style={{ width: 34, height: 34, display: "grid", placeItems: "center", borderRadius: 11, backgroundColor: accent, color: "#070809", fontSize: 18 }}>M</div>{projectName}
       </div>

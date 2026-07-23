@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Check, Clock3, Cloud, HardDrive, type LucideIcon } from "lucide-react";
 import type { TimedWord } from "./motion-composition";
+import { alignTranscriptToWordTimings } from "./caption-timing";
 import {
   getTranscriptionModel,
   MAX_TRANSCRIPTION_GLOSSARY_LENGTH,
@@ -155,12 +156,12 @@ export const TranscriptionComparisonResults = ({
                     spellCheck
                   />
                   <footer>
-                    <span>{draft.trim().split(/\s+/).filter(Boolean).length} words · {edited ? "edited · timing estimated" : run.words.length ? "word timed" : "segment timed"}</span>
+                    <span>{draft.trim().split(/\s+/).filter(Boolean).length} words · {edited && run.words.length ? "edited · timing preserved" : edited ? "edited · timing estimated" : run.words.length ? "word timed" : "segment timed"}</span>
                     <div className="comparison-actions">
                       {edited ? <button className="comparison-reset" type="button" onClick={() => setDrafts((current) => ({ ...current, [run.modelId]: run.text }))}>Reset</button> : null}
                       <button
                         type="button"
-                        onClick={() => onApply({ ...run, text: draft.trim(), words: edited ? [] : run.words })}
+                        onClick={() => onApply({ ...run, text: draft.trim(), words: edited ? alignTranscriptToWordTimings(draft, run.words) : run.words })}
                         disabled={!draft.trim() || (applied && !edited)}
                       >
                         {applied && !edited ? <><Check size={12} /> Selected</> : "Save & select"}

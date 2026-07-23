@@ -53,6 +53,7 @@ import {
 } from "./motion-composition";
 import { extractSpeechAudio, inspectMedia, MAX_ANALYSIS_SECONDS, normalizeTimedWords } from "./media-analysis";
 import { planStoryboard, type DetectedLanguage } from "./storyboard";
+import { alignTranscriptToWordTimings } from "./caption-timing";
 import { TranscriptionComparisonResults, TranscriptionGlossaryInput, TranscriptionLanguagePicker, TranscriptionModelPicker, type TranscriptionRun } from "./transcription-comparison";
 import {
   DEFAULT_TRANSCRIPTION_GLOSSARY,
@@ -231,6 +232,8 @@ export default function Studio() {
   const [playbackRate, setPlaybackRate] = useState(1);
   const [timelineZoom, setTimelineZoom] = useState(1);
   const [wordTiming, setWordTiming] = useState(true);
+  const [captionOffset, setCaptionOffset] = useState(0);
+  const [captionScale, setCaptionScale] = useState(100);
   const [dopaminePacing, setDopaminePacing] = useState(true);
   const [sourceFit, setSourceFit] = useState<"cover" | "contain">("cover");
   const [materialPreset, setMaterialPreset] = useState<MaterialPreset>("frost");
@@ -251,7 +254,7 @@ export default function Studio() {
   const usesGroqTranscription = selectedTranscriptionModels.some(isGroqTranscriptionModel);
   const appliedModel = appliedTranscriptionModel ? getTranscriptionModel(appliedTranscriptionModel) : null;
   const comparisonLanguageLabel = SPEECH_LANGUAGE_OPTIONS.find((option) => option.id === lastTranscriptionLanguage)?.label ?? "Auto detect";
-  const compositionProps = useMemo<MotionCompositionProps>(() => ({ videoUrl, transcript, words, scenes, captionPreset, motionStyle, accent, projectName: "MOTN / 001", durationInFrames, soundEnabled, wordTiming, sourceFit }), [videoUrl, transcript, words, scenes, captionPreset, motionStyle, accent, durationInFrames, soundEnabled, wordTiming, sourceFit]);
+  const compositionProps = useMemo<MotionCompositionProps>(() => ({ videoUrl, transcript, words, scenes, captionPreset, motionStyle, accent, projectName: "MOTN / 001", durationInFrames, soundEnabled, wordTiming, captionOffset, captionScale, sourceFit }), [videoUrl, transcript, words, scenes, captionPreset, motionStyle, accent, durationInFrames, soundEnabled, wordTiming, captionOffset, captionScale, sourceFit]);
 
   useEffect(() => () => {
     analysisRequest.current += 1;
@@ -488,6 +491,7 @@ export default function Studio() {
       setSourceMeta({ duration: projectDuration, width: metadata.width, height: metadata.height, size: metadata.size });
       setTranscript("");
       setWords([]);
+      setCaptionOffset(0);
       setHasSourceAudio(false);
       setTranscriptionRuns([]);
       setAppliedTranscriptionModel(null);
@@ -707,8 +711,8 @@ export default function Studio() {
             {transcriptionRuns.length ? <button className="comparison-open" type="button" onClick={() => setShowComparison(true)}><Layers3 size={14} /> Open full transcript comparison</button> : null}
             {needsTranscript ? <div className="prototype-note"><Sparkles size={16} /><p>Local transcription could not finish for this source. Paste the transcript here; the context director will still build a custom storyboard.</p></div> : null}
             {storyboardDirty && transcript.trim() ? <div className="stale-note"><RefreshCcw size={14} /> Review spelling, then save this transcript to generate the scenes.</div> : null}
-            <label className="transcript-editor-label" htmlFor="transcript-editor"><span>Spoken text</span><small>Edit mistakes directly. Timing becomes estimated after a manual edit.</small></label>
-            <textarea id="transcript-editor" className="transcript-field transcript-field-persistent" value={transcript} onChange={(event) => { setTranscript(event.target.value); setWords([]); setStoryboardDirty(true); setNeedsTranscript(!event.target.value.trim()); setActivePanel("captions"); }} placeholder={language === "DE" ? "Transkript hier einfügen…" : language === "RU" ? "Вставьте расшифровку…" : "Paste transcript here…"} aria-label="Transcript" />
+            <label className="transcript-editor-label" htmlFor="transcript-editor"><span>Spoken text</span><small>Edit mistakes directly. Existing word timing is preserved wherever possible.</small></label>
+            <textarea id="transcript-editor" className="transcript-field transcript-field-persistent" value={transcript} onChange={(event) => { const nextTranscript = event.target.value; setTranscript(nextTranscript); setWords((current) => alignTranscriptToWordTimings(nextTranscript, current)); setStoryboardDirty(true); setNeedsTranscript(!nextTranscript.trim()); setActivePanel("captions"); }} placeholder={language === "DE" ? "Transkript hier einfügen…" : language === "RU" ? "Вставьте расшифровку…" : "Paste transcript here…"} aria-label="Transcript" />
             <button className="primary-action" type="button" onClick={() => redirectScenes()} disabled={!transcript.trim()}><WandSparkles size={16} /> Save transcript and generate scenes</button>
             <details className="transcription-settings">
               <summary><span>Transcription setup</span><small>Language · names · models</small></summary>
@@ -720,6 +724,11 @@ export default function Studio() {
               </div>
             </details>
             <div className="control-section"><div className="control-label"><span>Caption style</span><small>Live preview</small></div><div className="preset-grid">{([ ["punch", "PUNCH", "Fast & bold"], ["clean", "Clean", "Calm & modern"], ["editorial", "Editorial", "Premium serif"] ] as Array<[CaptionPreset, string, string]>).map(([value, label, detail]) => <button className={captionPreset === value ? "active" : ""} type="button" key={value} onClick={() => { setCaptionPreset(value); setActivePanel("captions"); }} aria-pressed={captionPreset === value}><strong className={"caption-sample " + value}>{label}</strong><small>{detail}</small></button>)}</div></div>
+            <div className="caption-adjustments" aria-label="Caption timing and size controls">
+              <label><span><strong>Caption sync</strong><small>{words.length ? `Detected speech starts at ${formatTime(words[0].start)}` : "Shift estimated captions past an intro"}</small></span><output>{captionOffset > 0 ? "+" : ""}{captionOffset.toFixed(1)}s</output><input type="range" min="-3" max="15" step="0.1" value={captionOffset} onChange={(event) => setCaptionOffset(Number(event.target.value))} aria-label="Caption timing offset in seconds" /></label>
+              <label><span><strong>Font size</strong><small>Single-line captions auto-fit</small></span><output>{captionScale}%</output><input type="range" min="60" max="140" step="5" value={captionScale} onChange={(event) => setCaptionScale(Number(event.target.value))} aria-label="Caption font size percentage" /></label>
+              <button type="button" onClick={() => { setCaptionOffset(0); setCaptionScale(100); }}>Reset caption controls</button>
+            </div>
             <div className="toggle-row"><div><AudioLines size={17} /><span><strong>Word timing</strong><small>{words.length ? "Whisper timestamps" : "Estimated from duration"}</small></span></div><button className={"switch " + (wordTiming ? "on" : "")} role="switch" aria-checked={wordTiming} type="button" aria-label="Highlight active caption word" onClick={() => { setWordTiming((value) => !value); setActivePanel("captions"); }}><span /></button></div>
           </div>
         </aside>
