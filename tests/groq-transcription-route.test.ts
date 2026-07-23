@@ -53,11 +53,13 @@ test("forwards German as the ISO de language hint", async () => {
       assert.ok(init?.body instanceof FormData);
       assert.equal(init.body.get("model"), "whisper-large-v3");
       assert.equal(init.body.get("language"), "de");
+      assert.match(String(init.body.get("prompt")), /Anthropic/);
       return Response.json({ text: "Guten Tag", language: "de", words: [{ word: "Guten", start: 0, end: 0.4 }] });
     };
     const input = new FormData();
     input.append("model", "whisper-large-v3");
     input.append("language", "german");
+    input.append("glossary", "Anthropic, Claude");
     input.append("audio", new File([new Uint8Array(44)], "audio.wav", { type: "audio/wav" }));
     const response = await POST(new Request("http://localhost/api/transcription/groq", { method: "POST", body: input }));
     const payload = await response.json() as { text: string; language: string; words: unknown[] };

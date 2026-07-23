@@ -3,12 +3,15 @@ import test from "node:test";
 import {
   DEFAULT_LOCAL_SPEECH_MODEL_ID,
   DEFAULT_TRANSCRIPTION_MODEL_IDS,
+  DEFAULT_TRANSCRIPTION_GLOSSARY,
   encodePcm16Wav,
   getGroqLanguageCode,
+  getGroqTranscriptionPrompt,
   getTranscriptionOptions,
   isGroqTranscriptionModel,
   isLocalTranscriptionModel,
   isSpeechLanguage,
+  splitAudioForCloud,
   TRANSCRIPTION_MODELS,
 } from "../app/transcription";
 
@@ -28,12 +31,26 @@ test("supports automatic and explicit multilingual transcription options", () =>
 });
 
 test("offers local and Groq models with a useful default comparison", () => {
-  assert.deepEqual(DEFAULT_TRANSCRIPTION_MODEL_IDS, ["whisper-large-v3-turbo", "Xenova/whisper-tiny"]);
+  assert.deepEqual(DEFAULT_TRANSCRIPTION_MODEL_IDS, ["whisper-large-v3", "Xenova/whisper-small"]);
   assert.equal(TRANSCRIPTION_MODELS.filter((model) => model.provider === "groq").length, 2);
   assert.equal(TRANSCRIPTION_MODELS.filter((model) => model.provider === "local").length, 2);
   assert.equal(isGroqTranscriptionModel("whisper-large-v3"), true);
   assert.equal(isGroqTranscriptionModel("grok"), false);
   assert.equal(isLocalTranscriptionModel("Xenova/whisper-small"), true);
+});
+
+test("builds German spelling context for proper names", () => {
+  const prompt = getGroqTranscriptionPrompt("german", DEFAULT_TRANSCRIPTION_GLOSSARY);
+  assert.match(prompt, /Eigennamen und Fachbegriffe/);
+  assert.match(prompt, /Anthropic/);
+  assert.equal(getGroqTranscriptionPrompt("english", "   "), "");
+});
+
+test("splits cloud audio into Vercel-safe 30-second requests with offsets", () => {
+  const audio = new Float32Array(65 * 16_000);
+  const chunks = splitAudioForCloud(audio);
+  assert.deepEqual(chunks.map((chunk) => chunk.audio.length), [480_000, 480_000, 80_000]);
+  assert.deepEqual(chunks.map((chunk) => chunk.offsetSeconds), [0, 30, 60]);
 });
 
 test("encodes normalized browser audio as mono 16-bit WAV", async () => {

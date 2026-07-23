@@ -4,6 +4,7 @@ import { Check, Clock3, Cloud, HardDrive, type LucideIcon } from "lucide-react";
 import type { TimedWord } from "./motion-composition";
 import {
   getTranscriptionModel,
+  MAX_TRANSCRIPTION_GLOSSARY_LENGTH,
   SPEECH_LANGUAGE_OPTIONS,
   TRANSCRIPTION_MODELS,
   type SpeechLanguage,
@@ -56,6 +57,30 @@ export const TranscriptionLanguagePicker = ({
     </div>
     {value === "german" ? <p className="language-hint">Deutsch is sent explicitly as <strong>de</strong> to Groq and as <strong>German</strong> to local Whisper.</p> : null}
   </div>
+);
+
+export const TranscriptionGlossaryInput = ({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: string;
+  disabled: boolean;
+  onChange: (value: string) => void;
+}) => (
+  <label className="transcription-glossary">
+    <span>Names &amp; terms <small>Improves cloud spelling</small></span>
+    <input
+      type="text"
+      value={value}
+      disabled={disabled}
+      maxLength={MAX_TRANSCRIPTION_GLOSSARY_LENGTH}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder="Anthropic, OpenAI, product names, people..."
+      aria-label="Transcription names and terms"
+    />
+    <small>Add unusual brand, product, and person names before transcribing. You can still correct the selected transcript afterward.</small>
+  </label>
 );
 
 export const TranscriptionModelPicker = ({

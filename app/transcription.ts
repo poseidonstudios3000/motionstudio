@@ -20,6 +20,39 @@ export const isSpeechLanguage = (value: string): value is SpeechLanguage =>
   SPEECH_LANGUAGE_OPTIONS.some((language) => language.id === value);
 
 export const getGroqLanguageCode = (language: SpeechLanguage) => language === "auto" ? null : groqLanguageCodes[language];
+export const DEFAULT_TRANSCRIPTION_GLOSSARY = "Anthropic, OpenAI, ChatGPT, Claude, Gemini, Groq, Kimi, xAI";
+export const MAX_TRANSCRIPTION_GLOSSARY_LENGTH = 500;
+export const CLOUD_TRANSCRIPTION_CHUNK_SECONDS = 30;
+
+export const normalizeTranscriptionGlossary = (value: string) =>
+  value.replace(/\s+/g, " ").replace(/^[,\s]+|[,\s]+$/g, "").slice(0, MAX_TRANSCRIPTION_GLOSSARY_LENGTH);
+
+export const getGroqTranscriptionPrompt = (language: SpeechLanguage, glossary: string) => {
+  const terms = normalizeTranscriptionGlossary(glossary);
+  if (!terms) return "";
+  if (language === "german") return `Folgende Eigennamen und Fachbegriffe können vorkommen: ${terms}. Schreibe sie genau so.`;
+  if (language === "russian") return `В аудио могут встречаться следующие имена и термины: ${terms}. Пиши их именно так.`;
+  if (language === "spanish") return `El audio puede contener estos nombres y términos: ${terms}. Escríbelos exactamente así.`;
+  if (language === "french") return `L'audio peut contenir ces noms et termes : ${terms}. Écris-les exactement ainsi.`;
+  return `The audio may contain these names and terms: ${terms}. Spell them exactly as written.`;
+};
+
+export const splitAudioForCloud = (
+  audio: Float32Array,
+  sampleRate = 16_000,
+  chunkSeconds = CLOUD_TRANSCRIPTION_CHUNK_SECONDS,
+) => {
+  const samplesPerChunk = Math.max(1, Math.floor(sampleRate * chunkSeconds));
+  const chunks: Array<{ audio: Float32Array; offsetSeconds: number }> = [];
+  for (let offset = 0; offset < audio.length; offset += samplesPerChunk) {
+    chunks.push({
+      audio: audio.slice(offset, Math.min(audio.length, offset + samplesPerChunk)),
+      offsetSeconds: offset / sampleRate,
+    });
+  }
+  return chunks;
+};
+
 export type LocalTranscriptionModelId = "Xenova/whisper-tiny" | "Xenova/whisper-small";
 export type GroqTranscriptionModelId = "whisper-large-v3-turbo" | "whisper-large-v3";
 export type TranscriptionModelId = LocalTranscriptionModelId | GroqTranscriptionModelId;
@@ -80,8 +113,8 @@ export const TRANSCRIPTION_MODELS: readonly TranscriptionModelProfile[] = [
 
 export const DEFAULT_LOCAL_SPEECH_MODEL_ID: LocalTranscriptionModelId = "Xenova/whisper-tiny";
 export const DEFAULT_TRANSCRIPTION_MODEL_IDS: readonly TranscriptionModelId[] = [
-  "whisper-large-v3-turbo",
-  "Xenova/whisper-tiny",
+  "whisper-large-v3",
+  "Xenova/whisper-small",
 ];
 export const SPEECH_MODEL_ID = DEFAULT_LOCAL_SPEECH_MODEL_ID;
 export const SPEECH_MODEL_LABEL = "Whisper tiny";
