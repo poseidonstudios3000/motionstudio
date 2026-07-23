@@ -233,8 +233,8 @@ export default function Studio() {
   const [wordTiming, setWordTiming] = useState(true);
   const [dopaminePacing, setDopaminePacing] = useState(true);
   const [sourceFit, setSourceFit] = useState<"cover" | "contain">("cover");
-  const [materialPreset, setMaterialPreset] = useState<MaterialPreset>("chrome");
-  const [fontPreset, setFontPreset] = useState<FontPreset>("geist");
+  const [materialPreset, setMaterialPreset] = useState<MaterialPreset>("frost");
+  const [fontPreset, setFontPreset] = useState<FontPreset>("technical");
   const [dropActive, setDropActive] = useState(false);
   const [selectedTranscriptionModels, setSelectedTranscriptionModels] = useState<TranscriptionModelId[]>([...DEFAULT_TRANSCRIPTION_MODEL_IDS]);
   const [selectedSpeechLanguage, setSelectedSpeechLanguage] = useState<SpeechLanguage>("auto");
